@@ -75,7 +75,41 @@ def build_daily_equity(
     return pd.DataFrame(rows).sort_values("trading_date").reset_index(drop=True)
 
 
-def perf_stats(returns: pd.Series) -> dict:
+def longest_drawdown_years(dates: pd.Series, equity: pd.Series) -> tuple[float, bool]:
+    """Longest stretch from a peak to a full recovery to a new equity high.
+
+    Distinct from MaxDrawdown's magnitude -- the deepest drawdown and the
+    longest-lasting one aren't necessarily the same episode. Returns
+    (years, ongoing) where ongoing=True means the longest such stretch was
+    still underwater at the end of the sample (no recovery date to measure
+    to yet, so the true duration is a lower bound).
+    """
+    running_max = equity.cummax()
+    underwater = (equity < running_max).to_numpy()
+    dates_arr = pd.DatetimeIndex(dates).to_numpy()
+
+    longest_days = 0
+    ongoing = False
+    i, n = 0, len(underwater)
+    while i < n:
+        if underwater[i]:
+            peak_idx = i - 1
+            j = i
+            while j < n and underwater[j]:
+                j += 1
+            start_date = dates_arr[peak_idx] if peak_idx >= 0 else dates_arr[i]
+            end_date = dates_arr[j] if j < n else dates_arr[n - 1]
+            duration_days = (pd.Timestamp(end_date) - pd.Timestamp(start_date)).days
+            if duration_days > longest_days:
+                longest_days = duration_days
+                ongoing = j >= n
+            i = j
+        else:
+            i += 1
+    return round(longest_days / 365.25, 2), ongoing
+
+
+def perf_stats(returns: pd.Series, dates: pd.Series | None = None) -> dict:
     equity = (1.0 + returns).cumprod()
     n_years = len(returns) / TRADING_DAYS_PER_YEAR
     cagr = equity.iloc[-1] ** (1 / n_years) - 1.0
@@ -89,11 +123,16 @@ def perf_stats(returns: pd.Series) -> dict:
     drawdown = equity / running_max - 1.0
     max_dd = drawdown.min()
     calmar = cagr / abs(max_dd) if max_dd else np.nan
-    return {
+    stats = {
         "CAGR": cagr, "Sharpe": sharpe, "Volatility": vol,
         "MaxDrawdown": max_dd, "Sortino": sortino, "Calmar": calmar,
         "GrowthOf1": equity.iloc[-1],
     }
+    if dates is not None:
+        longest_years, ongoing = longest_drawdown_years(dates, equity)
+        stats["LongestDrawdownYears"] = longest_years
+        stats["LongestDrawdownOngoing"] = ongoing
+    return stats
 
 
 def run_variant(strategy_name: str, holding_substitution: dict[str, str], output_filename: str) -> None:
@@ -115,8 +154,8 @@ def run_variant(strategy_name: str, holding_substitution: dict[str, str], output
     print((daily["traded_holding"].value_counts() / len(daily) * 100).round(1).astype(str) + "%")
     print()
 
-    model_stats = perf_stats(daily["model_return"])
-    spy_stats = perf_stats(daily["spy_return"])
+    model_stats = perf_stats(daily["model_return"], daily["trading_date"])
+    spy_stats = perf_stats(daily["spy_return"], daily["trading_date"])
     stats_df = pd.DataFrame({strategy_name: model_stats, "S&P 500 (SPY)": spy_stats})
     pd.set_option("display.float_format", lambda x: f"{x:,.4f}")
     print(stats_df)
