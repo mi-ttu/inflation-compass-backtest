@@ -120,3 +120,40 @@ CREATE TABLE IF NOT EXISTS regime_history (
     regime              VARCHAR NOT NULL,        -- 'reflation' | 'goldilocks' | 'stagflation' | 'disinflationary_slowdown'
     holding               VARCHAR NOT NULL         -- 'XLE' | 'XLK' | 'XLU' | 'XLP+IEF_5050'
 );
+
+-- ============================================================
+-- GOLD (Enhanced variant): parameter-diversified ("ensembled") signals,
+-- per AllocateSmartly's description of Varadi's "Enhanced" Inflation
+-- Compass -- see transform/build_signals_enhanced.py for the exact
+-- ensembling design and the assumptions it documents (Varadi's own exact
+-- algorithm isn't public; this is our own defensible reconstruction from
+-- AllocateSmartly's description).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS signals_daily_enhanced (
+    trading_date                        DATE PRIMARY KEY,
+    spy_close                            DOUBLE,
+    spy_sma_200                           DOUBLE,
+    growth_up                             BOOLEAN,        -- SPY > 200-day SMA (unchanged from Original)
+    t5yie                                  DOUBLE,
+    breakeven_above_target                  BOOLEAN,        -- T5YIE > 2.0% (unchanged from Original)
+    breakeven_momentum_up_40                  BOOLEAN,        -- T5YIE > T5YIE 40 trading days ago
+    breakeven_momentum_up_60                    BOOLEAN,        -- T5YIE > T5YIE 60 trading days ago
+    breakeven_momentum_up_80                      BOOLEAN,        -- T5YIE > T5YIE 80 trading days ago
+    breakeven_momentum_up_ensemble_frac              DOUBLE,         -- fraction of {40,60,80} windows that were True
+    breakeven_momentum_up_enhanced                     BOOLEAN,        -- majority vote (frac > 0.5)
+    asset_momentum_slope_40                              DOUBLE,
+    asset_momentum_slope_60                                DOUBLE,
+    asset_momentum_slope_80                                  DOUBLE,
+    asset_momentum_up_ensemble_frac                            DOUBLE,         -- fraction of {40,60,80} slopes that were positive
+    asset_momentum_up_enhanced                                   BOOLEAN,        -- majority vote (frac > 0.5)
+    inflation_on                                                   BOOLEAN         -- breakeven_above_target AND (breakeven_momentum_up_enhanced OR asset_momentum_up_enhanced)
+);
+
+CREATE TABLE IF NOT EXISTS regime_history_enhanced (
+    decision_date    DATE PRIMARY KEY,
+    growth_up         BOOLEAN NOT NULL,
+    inflation_on       BOOLEAN NOT NULL,
+    regime              VARCHAR NOT NULL,
+    holding               VARCHAR NOT NULL
+);
