@@ -1,0 +1,6 @@
+.venv/
+data/raw/
+*.duckdb
+__pycache__/
+*.pyc
+.ipynb_checkpoints/

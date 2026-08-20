@@ -1,0 +1,7 @@
+duckdb>=1.1
+pandas>=2.2
+numpy>=2.0
+yfinance>=0.2.43
+pandas_market_calendars>=4.4
+requests>=2.32
+python-dateutil>=2.9
