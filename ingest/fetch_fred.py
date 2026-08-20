@@ -14,7 +14,7 @@ import requests
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = PROJECT_ROOT / "data" / "raw" / "fred"
 
-SERIES_IDS = ["T5YIE", "CPIAUCSL"]
+SERIES_IDS = ["T5YIE", "CPIAUCSL", "EXPINF5YR", "DGS10"]
 FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
 
 

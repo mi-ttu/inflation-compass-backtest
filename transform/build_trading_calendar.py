@@ -13,7 +13,7 @@ import pandas_market_calendars as mcal
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "curated.duckdb"
 
-START = "1993-01-01"  # covers SPY's earliest possible history
+START = "1988-01-01"  # covers the pre-2003 extension's 1990+ target with warmup room
 END = "2026-12-31"
 
 

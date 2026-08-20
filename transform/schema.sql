@@ -78,6 +78,19 @@ CREATE TABLE IF NOT EXISTS cpi_vintages (
     PRIMARY KEY (observation_date, vintage_date)
 );
 
+-- Fama-French 12 Industry Portfolios (value-weighted, daily), from Ken
+-- French's Data Library. Used as a free, public pre-1998 proxy for
+-- sector/industry returns -- see transform/build_signals_extended.py for
+-- the documented industry-to-sector mapping.
+CREATE TABLE IF NOT EXISTS famafrench_industry_returns (
+    industry        VARCHAR NOT NULL,   -- 'NoDur','Durbl','Manuf','Enrgy','Chems','BusEq','Telcm','Utils','Shops','Hlth','Money','Other'
+    trading_date    DATE NOT NULL,
+    daily_return    DOUBLE NOT NULL,     -- decimal (e.g. 0.0164, not 1.64)
+    weighting       VARCHAR NOT NULL DEFAULT 'value_weighted',
+    source          VARCHAR NOT NULL DEFAULT 'ken_french_data_library',
+    PRIMARY KEY (industry, trading_date)
+);
+
 -- Ingestion audit trail: what was pulled, when, from where.
 CREATE TABLE IF NOT EXISTS ingestion_log (
     ingestion_id    BIGINT PRIMARY KEY,
@@ -151,6 +164,39 @@ CREATE TABLE IF NOT EXISTS signals_daily_enhanced (
 );
 
 CREATE TABLE IF NOT EXISTS regime_history_enhanced (
+    decision_date    DATE PRIMARY KEY,
+    growth_up         BOOLEAN NOT NULL,
+    inflation_on       BOOLEAN NOT NULL,
+    regime              VARCHAR NOT NULL,
+    holding               VARCHAR NOT NULL
+);
+
+-- ============================================================
+-- GOLD (Extended variant): 1990+ reconstruction replicating what
+-- AllocateSmartly describes doing -- see transform/build_signals_extended.py
+-- for the full splicing methodology and documented substitutions
+-- (EXPINF5YR for T5YIE pre-2003, Fama-French 12 industries for the SPDR
+-- sector basket pre-1998, chained not independently-rebased at the
+-- splice). Data before 2003-01-02 is out-of-sample for the Original
+-- model, same framing AllocateSmartly uses.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS signals_daily_extended (
+    trading_date               DATE PRIMARY KEY,
+    spy_close                   DOUBLE,         -- ^GSPC price throughout (no splice needed here)
+    spy_sma_200                  DOUBLE,
+    growth_up                     BOOLEAN,
+    inflation_signal_source         VARCHAR,        -- 'EXPINF5YR_proxy' (pre-2003) or 'T5YIE' (real, 2003+)
+    inflation_level                  DOUBLE,         -- whichever series is active that day
+    breakeven_above_target             BOOLEAN,
+    breakeven_momentum_up                 BOOLEAN,
+    sector_basket_ratio                     DOUBLE,         -- chained across the Fama-French / SPDR splice
+    sector_basket_slope_60d                   DOUBLE,
+    asset_momentum_up                           BOOLEAN,
+    inflation_on                                  BOOLEAN
+);
+
+CREATE TABLE IF NOT EXISTS regime_history_extended (
     decision_date    DATE PRIMARY KEY,
     growth_up         BOOLEAN NOT NULL,
     inflation_on       BOOLEAN NOT NULL,

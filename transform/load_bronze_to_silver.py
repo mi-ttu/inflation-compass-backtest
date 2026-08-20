@@ -123,7 +123,7 @@ def log_ingestion(con: duckdb.DuckDBPyConnection, meta: dict, csv_path: Path) ->
     ingestion_id = _next_log_id[0]
     _next_log_id[0] += 1
 
-    identifier = meta.get("series_id") or meta.get("ticker")
+    identifier = meta.get("series_id") or meta.get("ticker") or meta.get("identifier", "unknown")
     con.execute(
         """
         INSERT INTO ingestion_log
@@ -144,11 +144,48 @@ def log_ingestion(con: duckdb.DuckDBPyConnection, meta: dict, csv_path: Path) ->
     )
 
 
+def load_famafrench(con: duckdb.DuckDBPyConnection) -> None:
+    ff_dir = RAW_DIR / "famafrench"
+    pull_dirs = sorted(d for d in ff_dir.iterdir() if d.is_dir())
+    if not pull_dirs:
+        return
+    pull_dir = pull_dirs[-1]
+    meta = json.loads((pull_dir / "meta.json").read_text(encoding="utf-8"))
+    csv_path = pull_dir / "12_Industry_Portfolios_Daily.csv"
+
+    lines = csv_path.read_text(encoding="utf-8").splitlines()
+    header_idx = next(i for i, line in enumerate(lines) if "Average Value Weighted Returns" in line)
+    columns = [c.strip() for c in lines[header_idx + 1].split(",")][1:]  # drop leading blank (date) column
+    data_start = header_idx + 2
+    data_end = next(i for i in range(data_start, len(lines)) if not lines[i].strip())
+
+    rows = []
+    for line in lines[data_start:data_end]:
+        parts = [p.strip() for p in line.split(",")]
+        trading_date = pd.to_datetime(parts[0], format="%Y%m%d").date()
+        for industry, raw_value in zip(columns, parts[1:], strict=True):
+            value = float(raw_value)
+            if value in (-99.99, -999):
+                continue
+            rows.append((industry, trading_date, value / 100.0))
+
+    df = pd.DataFrame(rows, columns=["industry", "trading_date", "daily_return"])
+    con.execute("DELETE FROM famafrench_industry_returns")
+    con.execute(
+        "INSERT INTO famafrench_industry_returns (industry, trading_date, daily_return) "
+        "SELECT industry, trading_date, daily_return FROM df"
+    )
+    print(f"[silver] famafrench_industry_returns: {len(df)} rows, {len(columns)} industries")
+
+    log_ingestion(con, meta, csv_path)
+
+
 def main() -> None:
     con = duckdb.connect(str(DB_PATH))
     con.execute("DELETE FROM ingestion_log")
     load_fred(con)
     load_yfinance(con)
+    load_famafrench(con)
     con.close()
 
 
