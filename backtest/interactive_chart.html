@@ -26,8 +26,7 @@
     --status-gain: #2f7d4f;
     --table-header-bg: #1c1e22;
     --table-header-text: #f5f4f1;
-    --regime-reflation: #4285f4;
-    --status-loss-on-navy: #ff9086;
+    --regime-reflation: #87CEEB;
     --regime-stagflation: rgba(210,48,48,0.20);
     --regime-goldilocks: rgba(10,225,90,0.42);
     --regime-disinflation: rgba(212,146,20,0.26);
@@ -54,7 +53,7 @@
       --status-gain: #4fb87c;
       --table-header-bg: #131415;
       --table-header-text: #f5f4f1;
-      --regime-reflation: #4285f4;
+      --regime-reflation: #87CEEB;
       --regime-stagflation: rgba(235,95,95,0.28);
       --regime-goldilocks: rgba(25,245,120,0.38);
       --regime-disinflation: rgba(230,175,55,0.28);
@@ -81,7 +80,7 @@
     --status-gain: #4fb87c;
     --table-header-bg: #131415;
     --table-header-text: #f5f4f1;
-    --regime-reflation: #4285f4;
+    --regime-reflation: #87CEEB;
     --regime-stagflation: rgba(235,95,95,0.28);
     --regime-goldilocks: rgba(25,245,120,0.38);
     --regime-disinflation: rgba(230,175,55,0.28);
@@ -368,8 +367,8 @@
     font-weight: 600;
     border-left: 1px solid var(--border);
   }
-  .monthly-table tbody tr td.regime-reflation { background: var(--regime-reflation); color: #f5f4f1; }
-  .monthly-table tbody tr td.regime-reflation.is-loss { color: var(--status-loss-on-navy); }
+  .monthly-table tbody tr td.regime-reflation { background: var(--regime-reflation); color: #1a1a1a; }
+  .monthly-table tbody tr td.regime-reflation.is-loss { color: #a02020; }
   .monthly-table tbody tr td.regime-stagflation { background: var(--regime-stagflation); }
   .monthly-table tbody tr td.regime-goldilocks { background: var(--regime-goldilocks); }
   .monthly-table tbody tr td.regime-disinflation { background: var(--regime-disinflation); }
@@ -439,7 +438,7 @@
     font-weight: 500;
     opacity: 0.82;
   }
-  .regime-legend-cell.regime-reflation { background: var(--regime-reflation); color: #f5f4f1; }
+  .regime-legend-cell.regime-reflation { background: var(--regime-reflation); color: #1a1a1a; }
   .regime-legend-cell.regime-stagflation { background: var(--regime-stagflation); }
   .regime-legend-cell.regime-goldilocks { background: var(--regime-goldilocks); }
   .regime-legend-cell.regime-disinflation { background: var(--regime-disinflation); }
