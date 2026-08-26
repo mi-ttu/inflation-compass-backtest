@@ -73,9 +73,33 @@ Claude Code session (the Artifact tool isn't callable from a bare script).
 
 ## Keeping it current automatically
 
-A weekly Windows Task Scheduler entry running `refresh_chart.py` keeps the
-local file current with no manual steps. (Not yet set up as of this
-writing — see the project's conversation history / ask Claude to set it up.)
+A Windows Scheduled Task named `InflationCompassChartRefresh` runs every
+Sunday at 8:00 PM local time, via `backtest/run_refresh.ps1` (a thin
+wrapper around `refresh_chart.py` that logs full output, UTF-8, to
+`backtest/refresh_logs/`, keeping the 20 most recent runs). It's configured
+to catch up automatically if the machine was off or asleep at the scheduled
+time (`StartWhenAvailable`), and runs under the logged-in user account, so
+no credentials are stored.
+
+This task is local to each machine — set up separately on `bootstrap.py`
+above, it isn't part of the git-tracked project state. To recreate it on
+another machine:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "powershell.exe" `
+  -Argument '-NoProfile -ExecutionPolicy Bypass -File "<repo path>\backtest\run_refresh.ps1"' `
+  -WorkingDirectory "<repo path>"
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 8:00PM
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
+  -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName "InflationCompassChartRefresh" -Action $action `
+  -Trigger $trigger -Settings $settings -RunLevel Limited `
+  -Description "Weekly refresh of the Inflation Compass backtest chart"
+```
+
+Note that this only regenerates the local HTML file — pushing the refreshed
+data to the published Artifact URL still requires a Claude Code session,
+since the Artifact tool isn't callable from a bare script.
 
 ## Reproducing on another machine
 
