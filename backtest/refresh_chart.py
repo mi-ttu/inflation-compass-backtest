@@ -1,9 +1,9 @@
 """End-to-end refresh for the interactive chart artifact: re-pull market data,
-rebuild the signal engine and the three backtest variants the chart displays
+rebuild the signal engine and the four backtest variants the chart displays
 (Levered TQQQ/ERX monthly, Levered TQQQ/ERX daily-signal, Unlevered QQQ
-monthly), then patch the fresh daily-return series, the monthly/annual
-returns table, and the regime pie-chart summary into
-backtest/interactive_chart.html in place.
+monthly, Hybrid QLD-goldilocks/XLE-reflation monthly), then patch the fresh
+daily-return series, the monthly/annual returns table, and the regime
+pie-chart summary into backtest/interactive_chart.html in place.
 
 This script only regenerates the local HTML file -- it does not publish
 anything. After it succeeds, publish backtest/interactive_chart.html to the
@@ -35,6 +35,7 @@ PIPELINE_STEPS = [
     ("backtest/simulate_extended_levered_monthly.py", "backtest"),
     ("backtest/simulate_extended_levered_daily_signal.py", "backtest"),
     ("backtest/simulate_unlevered_monthly_qqq.py", "backtest"),
+    ("backtest/simulate_hybrid_qld_goldilocks_xle_reflation.py", "backtest"),
 ]
 
 REGIME_MAP = {
@@ -65,8 +66,11 @@ def build_daily_blob() -> dict:
     levered = load_series("extended_levered_tqqq_erx_returns.csv")
     levered_daily = load_series("extended_levered_daily_signal_returns.csv")
     unlevered = load_series("unlevered_monthly_qqq_returns.csv")
+    hybrid_qld_xle = load_series("hybrid_qld_goldilocks_xle_reflation_returns.csv")
 
-    dates = sorted(set(levered.index) & set(levered_daily.index) & set(unlevered.index))
+    dates = sorted(
+        set(levered.index) & set(levered_daily.index) & set(unlevered.index) & set(hybrid_qld_xle.index)
+    )
     date_strs = [d.strftime("%Y-%m-%d") for d in dates]
 
     return {
@@ -75,6 +79,7 @@ def build_daily_blob() -> dict:
         "unlevered": [round(float(unlevered.loc[d, "model_return"]), 4) for d in dates],
         "spy": [round(float(unlevered.loc[d, "spy_return"]), 4) for d in dates],
         "levered_daily": [round(float(levered_daily.loc[d, "model_return"]), 4) for d in dates],
+        "hybrid_qld_xle": [round(float(hybrid_qld_xle.loc[d, "model_return"]), 4) for d in dates],
     }
 
 
