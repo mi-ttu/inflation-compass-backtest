@@ -18,7 +18,7 @@ import yfinance as yf
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = PROJECT_ROOT / "data" / "raw" / "yfinance"
 
-TICKERS = ["SPY", "XLE", "XLK", "XLU", "XLP", "IEF", "XLI", "XLF", "XLB", "XLV", "TECL", "ERX", "QLD", "TQQQ", "^GSPC", "^NDX", "SPMO", "SSO", "QQQ", "VGT"]
+TICKERS = ["SPY", "XLE", "XLK", "XLU", "XLP", "IEF", "XLI", "XLF", "XLB", "XLV", "TECL", "ERX", "QLD", "TQQQ", "^GSPC", "^NDX", "SPMO", "SSO", "QQQ", "VGT", "UPRO"]
 
 
 def fetch_ticker(ticker: str, pulled_at: datetime) -> Path:
