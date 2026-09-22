@@ -606,6 +606,12 @@ function fmtCompact(v) {
 function fmtPct(v) { return v.toFixed(1) + "%"; }
 function fmtPctStat(v) { return Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "N/A"; }
 function fmtRatio(v) { return Number.isFinite(v) ? v.toFixed(2) : "N/A"; }
+function fmtCumReturn(v) {
+  if (!Number.isFinite(v)) return "N/A";
+  const pct = v * 100;
+  const sign = pct > 0 ? "+" : "";
+  return Math.abs(pct) >= 1000 ? sign + Math.round(pct).toLocaleString("en-US") + "%" : sign + pct.toFixed(1) + "%";
+}
 function fmtDate(iso) { return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
 function fmtDateShort(iso) { return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "2-digit", day: "2-digit" }); }
 
@@ -799,6 +805,28 @@ function sliceReturns(startISO, endISO) {
   return out;
 }
 
+// "Nice" tick step (1/2/5 x a power of 10) for a given span and target
+// tick count -- same idea as d3.ticks, applied directly in log10-space for
+// the growth chart so the y-axis always fits the range actually on screen
+// instead of snapping out to the nearest whole decade.
+function niceTickStep(span, targetCount) {
+  const rawStep = span / targetCount;
+  if (!(rawStep > 0)) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  if (norm < 1.5) return 1 * mag;
+  if (norm < 3.5) return 2 * mag;
+  if (norm < 7.5) return 5 * mag;
+  return 10 * mag;
+}
+function niceTicksInRange(min, max, targetCount) {
+  const step = niceTickStep(max - min, targetCount);
+  const start = Math.ceil(min / step) * step;
+  const ticks = [];
+  for (let v = start; v <= max + step * 1e-6; v += step) ticks.push(v);
+  return ticks;
+}
+
 // ============================================================
 // Generic chart renderer -- used for both the growth (log-scale,
 // line-only) and drawdown (linear-scale, line+area) panels.
@@ -834,12 +862,18 @@ function renderChart({ svgId, tooltipId, shellId, data, scale, areaFill, valueFm
 
   let yScale, yTicks;
   if (scale === "log") {
-    const allVals = visible.flatMap(s => data[s.key]);
-    const logMin = Math.floor(Math.log10(Math.min(...allVals)));
-    const logMax = Math.ceil(Math.log10(Math.max(...allVals)));
+    const allVals = visible.flatMap(s => data[s.key]).filter(v => v > 0 && Number.isFinite(v));
+    const rawLogMin = Math.log10(Math.min(...allVals));
+    const rawLogMax = Math.log10(Math.max(...allVals));
+    // Pad the actual on-screen range rather than snapping out to whole
+    // decades -- a tight range (e.g. a 1-month window) stays tight instead
+    // of always spanning $1K-$100K regardless of what's actually shown.
+    const span = rawLogMax - rawLogMin;
+    const pad = Math.max(span * 0.12, 0.04);
+    const logMin = rawLogMin - pad;
+    const logMax = rawLogMax + pad;
     yScale = v => M.top + (logMax - Math.log10(v)) / (logMax - logMin) * plotH;
-    yTicks = [];
-    for (let p = logMin; p <= logMax; p++) yTicks.push(Math.pow(10, p));
+    yTicks = niceTicksInRange(logMin, logMax, 6).map(t => Math.pow(10, t));
   } else {
     const allVals = visible.flatMap(s => data[s.key]);
     const minV = Math.min(...allVals, 0);
@@ -852,7 +886,7 @@ function renderChart({ svgId, tooltipId, shellId, data, scale, areaFill, valueFm
   yTicks.forEach(v => {
     const y = yScale(v);
     svg.appendChild(el("line", { class: "gridline", x1: M.left, x2: W - M.right, y1: y, y2: y }));
-    const label = scale === "log" ? (v >= 1000 ? "$" + v.toLocaleString("en-US") : "$" + v) : v + "%";
+    const label = scale === "log" ? fmtCompact(v) : v + "%";
     const t = el("text", { class: "axis-text", x: M.left - 8, y: y + 3, "text-anchor": "end" });
     t.textContent = label;
     svg.appendChild(t);
@@ -1037,7 +1071,7 @@ function renderStatsTable(sliced) {
 
   table.innerHTML = `
     <thead><tr>
-      <th>Strategy</th><th>CAGR</th><th>Vol</th><th>Sharpe</th><th>Sortino</th><th>Max DD</th><th>Longest DD</th><th>Calmar</th><th>Growth of $10,000</th>
+      <th>Strategy</th><th>CAGR</th><th>Vol</th><th>Sharpe</th><th>Sortino</th><th>Max DD</th><th>Longest DD</th><th>Calmar</th><th>Cumulative Return</th>
     </tr></thead>
     <tbody>
       ${rows.map(({ meta, stats }) => {
@@ -1055,7 +1089,7 @@ function renderStatsTable(sliced) {
         <td>${fmtPctStat(stats.maxDD)}</td>
         <td>${longestStr}</td>
         <td>${fmtRatio(stats.calmar)}</td>
-        <td>${fmtCompact(stats.growthOf1 * STARTING_AMOUNT)}</td>
+        <td>${fmtCumReturn(stats.growthOf1 - 1)}</td>
       </tr>`;
       }).join("")}
     </tbody>
