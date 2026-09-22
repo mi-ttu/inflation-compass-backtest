@@ -17,7 +17,15 @@ New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
 
 foreach ($sub in @("ingest", "transform", "backtest")) {
     $dest = Join-Path $AppDir $sub
-    robocopy (Join-Path $ProjectRoot $sub) $dest /E /XD data __pycache__ refresh_logs /XF "*.pyc" /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+    # email_config.json is a local secret (Gmail app password) -- it must
+    # never ship in a distributed package. Only the .example template does.
+    robocopy (Join-Path $ProjectRoot $sub) $dest /E /XD data __pycache__ refresh_logs `
+        /XF "*.pyc" "email_config.json" "last_allocation.json" /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+}
+
+$leakedSecret = Join-Path $AppDir "backtest\email_config.json"
+if (Test-Path $leakedSecret) {
+    throw "SAFETY CHECK FAILED: $leakedSecret exists in the release package -- aborting before zipping."
 }
 Copy-Item (Join-Path $ProjectRoot "requirements.txt") $AppDir
 Copy-Item (Join-Path $ProjectRoot "installer\install.ps1") $ReleaseDir
