@@ -13,12 +13,15 @@ refresh_chart.py.
 
 Usage: .venv/Scripts/python.exe backtest/bootstrap.py
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+# Whatever interpreter is currently running this script -- see the same
+# comment in refresh_chart.py.
+PYTHON = Path(sys.executable)
 
 ONE_TIME_STEPS = [
     "transform/init_db.py",
@@ -30,7 +33,10 @@ ONE_TIME_STEPS = [
 def run(rel_path: str) -> None:
     script = PROJECT_ROOT / rel_path
     print(f"[bootstrap] running {rel_path} ...")
-    result = subprocess.run([str(PYTHON), str(script)], cwd=str(script.parent))
+    # See the matching comment in refresh_chart.py's run_pipeline() -- the
+    # standalone app's embedded runtime needs this explicitly.
+    env = {**os.environ, "PYTHONPATH": str(script.parent)}
+    result = subprocess.run([str(PYTHON), str(script)], cwd=str(script.parent), env=env)
     if result.returncode != 0:
         raise RuntimeError(f"{rel_path} exited with code {result.returncode} -- aborting bootstrap")
 

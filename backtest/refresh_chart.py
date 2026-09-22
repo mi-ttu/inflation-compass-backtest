@@ -14,6 +14,7 @@ tool, passing that URL so the same page updates instead of creating a new one.
 Usage: .venv/Scripts/python.exe backtest/refresh_chart.py
 """
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +25,10 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BACKTEST_DIR = PROJECT_ROOT / "backtest"
 CHART_PATH = BACKTEST_DIR / "interactive_chart.html"
-PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+# Whatever interpreter is currently running this script -- the dev venv's
+# python.exe locally, or the standalone app's embedded runtime once
+# installed. Never hardcode a venv path here: it won't exist post-install.
+PYTHON = Path(sys.executable)
 
 PIPELINE_STEPS = [
     ("ingest/fetch_yfinance.py", "ingest"),
@@ -53,7 +57,15 @@ def run_pipeline() -> None:
     for rel_path, _stage in PIPELINE_STEPS:
         script = PROJECT_ROOT / rel_path
         print(f"[refresh] running {rel_path} ...")
-        result = subprocess.run([str(PYTHON), str(script)], cwd=str(script.parent))
+        # The standalone app's embedded Python runtime uses a ._pth file
+        # that, unlike a normal install, does NOT auto-add the running
+        # script's own directory to sys.path -- so a same-directory
+        # sibling import (e.g. `from _levered_common import ...`) would
+        # otherwise fail there even though it works fine in a dev venv.
+        # Setting PYTHONPATH explicitly makes this work identically in
+        # both environments.
+        env = {**os.environ, "PYTHONPATH": str(script.parent)}
+        result = subprocess.run([str(PYTHON), str(script)], cwd=str(script.parent), env=env)
         if result.returncode != 0:
             raise RuntimeError(f"{rel_path} exited with code {result.returncode} -- aborting refresh")
 
