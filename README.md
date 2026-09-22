@@ -136,20 +136,31 @@ change.
 
 ## Standalone install (no Python required)
 
-For a machine you don't want to set up a dev environment on, `installer/`
-builds a self-contained package that installs the dashboard with a couple
-of double-clicks -- no Python, no git clone, no venv.
+For a machine you don't want to set up a dev environment on: no Python, no
+git clone, no venv, just a couple of double-clicks.
+
+**Easiest path** — download the pre-built package from
+[GitHub Releases](https://github.com/mi-ttu/inflation-compass-backtest/releases/latest),
+extract the zip, and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+**To rebuild it yourself** (e.g. after a code change, before cutting a new
+release):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File installer\build_release.ps1
 ```
 
 produces `dist\InflationCompassRelease\` (and a zip of the same), containing
-`install.ps1` plus a clean copy of the app source. Hand that folder or zip
-to the target machine and run:
+`install.ps1` plus a clean copy of the app source — `backtest/email_config.json`
+(a real credential, if you've set one up) is deliberately excluded; only
+the `.example` template ships. Publish a new release with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1
+gh release create vX.Y.Z dist\InflationCompassRelease.zip --title "..." --notes "..."
 ```
 
 This installs everything into `%LOCALAPPDATA%\InflationCompass\` (no admin
