@@ -108,6 +108,32 @@ Note that this only regenerates the local HTML file — pushing the refreshed
 data to the published Artifact URL still requires a Claude Code session,
 since the Artifact tool isn't callable from a bare script.
 
+## Email alert on allocation change
+
+`run_daily.py` (what the scheduled task above actually calls, and what
+`install.ps1` registers too) checks after every refresh whether the Hybrid
+(QLD/XLE), Daily variant's current holding differs from the last run's —
+i.e. whether the regime actually switched — and emails **only** when it
+has, via `backtest/notify.py`.
+
+It's opt-in and fails safe: if `backtest/email_config.json` doesn't exist
+or is incomplete, notification is silently skipped with a printed note —
+the data refresh itself never fails just because email isn't set up. To
+enable it:
+
+1. Generate a Gmail **App Password** (Google Account → Security → 2-Step
+   Verification → App passwords) — a revocable, mail-only credential,
+   not your real account password.
+2. Copy `backtest/email_config.example.json` to `backtest/email_config.json`
+   and fill in your Gmail address, the app password, and where you want
+   the alert sent. This file is git-ignored — it never gets committed.
+
+`data/last_allocation.json` tracks the last-seen holding (also git-ignored,
+regenerated locally). The very first run after enabling this just records
+the current holding without emailing, since there's nothing yet to compare
+it against — you'll get an email starting from the next actual regime
+change.
+
 ## Standalone install (no Python required)
 
 For a machine you don't want to set up a dev environment on, `installer/`
@@ -145,6 +171,11 @@ rights needed):
 Re-running `install.ps1` later (e.g. after pulling a code update and
 rebuilding the release) is safe — it refreshes the app source and
 re-registers the task, but never touches an already-bootstrapped database.
+
+The email-on-allocation-change feature (see above) comes along for free
+since it's just part of `backtest/`, but stays off until you manually drop
+a filled-in `email_config.json` into `<install dir>\app\backtest\` — the
+installer doesn't prompt for credentials or set this up automatically.
 
 One thing to expect: since the installer isn't code-signed, Windows
 SmartScreen may flag it as coming from an unrecognized publisher on first

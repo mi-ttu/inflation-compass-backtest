@@ -1,0 +1,7 @@
+{
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 587,
+  "sender_email": "your-gmail-address@gmail.com",
+  "app_password": "your-16-character-app-password",
+  "recipient_email": "where-you-want-the-alert@example.com"
+}

@@ -6,3 +6,5 @@ __pycache__/
 .ipynb_checkpoints/
 backtest/refresh_logs/
 dist/
+backtest/email_config.json
+data/last_allocation.json
