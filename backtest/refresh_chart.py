@@ -154,21 +154,52 @@ def canonical_doy(month: int, day: int) -> int:
 
 
 def build_daily_calendar_table() -> dict:
+    """Run-length encode the daily-signal variant's holding periods (a "run"
+    is a maximal stretch of consecutive trading days holding the same
+    instrument), then forward-fill each run across the weekends/holidays
+    that follow it so the calendar grid shows one continuous block of color
+    per allocation decision -- the position doesn't change over a weekend,
+    there's just no trading-day return recorded for those calendar days.
+    Each grid cell stores an index into `runs` rather than repeating the
+    run's start/end/return per day, both for a smaller payload and so every
+    cell in one block shares exactly one tooltip describing the whole
+    holding period.
+    """
     df = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
-    df["year"] = df.index.year
-    df["canon_doy"] = [canonical_doy(d.month, d.day) for d in df.index]
+    df["run_id"] = (df["traded_holding"] != df["traded_holding"].shift()).cumsum()
 
-    years = sorted(df["year"].unique())
+    runs = []
+    run_id_to_idx = {}
+    for i, (run_id, grp) in enumerate(df.groupby("run_id")):
+        holding = grp["traded_holding"].iloc[0]
+        total = 1.0
+        for v in grp["model_return"]:
+            total *= 1 + v
+        runs.append({
+            "start": grp.index.min().strftime("%Y-%m-%d"),
+            "end": grp.index.max().strftime("%Y-%m-%d"),
+            "holding": holding,
+            "regime": TRADED_REGIME_CODE[holding],
+            "returnPct": round((total - 1) * 100, 2),
+        })
+        run_id_to_idx[run_id] = i
+
+    trading_run_idx = df["run_id"].map(run_id_to_idx)  # indexed by trading_date
+    full_range = pd.date_range(df.index.min(), df.index.max(), freq="D")
+    run_idx_by_calendar_day = trading_run_idx.reindex(full_range).ffill()
+
+    years = sorted(set(full_range.year))
     rows = []
     for y in years:
-        year_df = df[df["year"] == y]
+        year_dates = full_range[full_range.year == y]
+        year_idx = run_idx_by_calendar_day.reindex(year_dates)
         day_map = {
-            int(doy): [round(float(ret) * 100, 3), TRADED_REGIME_CODE[hold]]
-            for doy, ret, hold in zip(year_df["canon_doy"], year_df["model_return"], year_df["traded_holding"])
+            canonical_doy(d.month, d.day): int(idx)
+            for d, idx in zip(year_dates, year_idx) if pd.notna(idx)
         }
         days = [day_map.get(d) for d in range(1, 367)]
 
-        year_returns = year_df["model_return"].values
+        year_returns = df.loc[df.index.year == y, "model_return"].values
         if len(year_returns):
             total = 1.0
             for v in year_returns:
@@ -179,7 +210,7 @@ def build_daily_calendar_table() -> dict:
         rows.append({"year": int(y), "days": days, "total": total_pct})
 
     last_date = df.index.max().strftime("%Y-%m-%d")
-    return {"rows": rows, "lastUpdate": last_date}
+    return {"runs": runs, "rows": rows, "lastUpdate": last_date}
 
 
 def build_regime_summary() -> dict:
