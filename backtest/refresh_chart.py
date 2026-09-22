@@ -142,6 +142,46 @@ def build_current_allocation() -> dict:
     }
 
 
+TRADED_REGIME_CODE = {"QLD": "G", "XLE": "R", "XLU": "S", "XLP+IEF_5050": "D"}
+
+
+def canonical_doy(month: int, day: int) -> int:
+    # 2020 is a leap year, so this gives a fixed 366-slot calendar position
+    # for any (month, day) -- Feb 29 always lands on slot 60, Dec 31 always
+    # on slot 366 -- so every year's row aligns on the same column
+    # regardless of whether that particular year was a leap year.
+    return pd.Timestamp(year=2020, month=month, day=day).dayofyear
+
+
+def build_daily_calendar_table() -> dict:
+    df = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
+    df["year"] = df.index.year
+    df["canon_doy"] = [canonical_doy(d.month, d.day) for d in df.index]
+
+    years = sorted(df["year"].unique())
+    rows = []
+    for y in years:
+        year_df = df[df["year"] == y]
+        day_map = {
+            int(doy): [round(float(ret) * 100, 3), TRADED_REGIME_CODE[hold]]
+            for doy, ret, hold in zip(year_df["canon_doy"], year_df["model_return"], year_df["traded_holding"])
+        }
+        days = [day_map.get(d) for d in range(1, 367)]
+
+        year_returns = year_df["model_return"].values
+        if len(year_returns):
+            total = 1.0
+            for v in year_returns:
+                total *= 1 + v
+            total_pct = round((total - 1) * 100, 2)
+        else:
+            total_pct = None
+        rows.append({"year": int(y), "days": days, "total": total_pct})
+
+    last_date = df.index.max().strftime("%Y-%m-%d")
+    return {"rows": rows, "lastUpdate": last_date}
+
+
 def build_regime_summary() -> dict:
     df = load_series("unlevered_monthly_qqq_returns.csv")
     df["period"] = df.index.to_period("M")
@@ -174,12 +214,15 @@ def replace_const(text: str, const_name: str, payload: dict) -> str:
     return text[:json_start] + new_json + text[end:]
 
 
-def patch_chart(daily: dict, monthly_table: dict, regime_summary: dict, current_allocation: dict) -> None:
+def patch_chart(
+    daily: dict, monthly_table: dict, regime_summary: dict, current_allocation: dict, daily_calendar: dict
+) -> None:
     text = CHART_PATH.read_text(encoding="utf-8")
     text = replace_const(text, "MONTHLY_TABLE_QQQ", monthly_table)
     text = replace_const(text, "DAILY", daily)
     text = replace_const(text, "REGIME_SUMMARY", regime_summary)
     text = replace_const(text, "CURRENT_ALLOCATION", current_allocation)
+    text = replace_const(text, "DAILY_CALENDAR_QLD_XLE", daily_calendar)
     CHART_PATH.write_text(text, encoding="utf-8")
 
 
@@ -190,8 +233,9 @@ def main() -> None:
     monthly_table = build_monthly_table()
     regime_summary = build_regime_summary()
     current_allocation = build_current_allocation()
+    daily_calendar = build_daily_calendar_table()
 
-    patch_chart(daily, monthly_table, regime_summary, current_allocation)
+    patch_chart(daily, monthly_table, regime_summary, current_allocation, daily_calendar)
 
     print()
     print(f"[refresh] chart data through {daily['dates'][-1]} patched into {CHART_PATH}")
