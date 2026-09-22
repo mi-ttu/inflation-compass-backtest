@@ -3,8 +3,8 @@ rebuild the signal engine and the five backtest variants the chart displays
 (Levered TQQQ/ERX monthly, Levered TQQQ/ERX daily-signal, Unlevered QQQ
 monthly, Hybrid QLD-goldilocks/XLE-reflation monthly, and its daily-signal
 cadence), then patch the fresh daily-return series, the monthly/annual
-returns table, and the regime pie-chart summary into
-backtest/interactive_chart.html in place.
+returns table, the regime pie-chart summary, and the current-allocation
+banner into backtest/interactive_chart.html in place.
 
 This script only regenerates the local HTML file -- it does not publish
 anything. After it succeeds, publish backtest/interactive_chart.html to the
@@ -122,6 +122,26 @@ def build_monthly_table() -> dict:
     return {"rows": rows, "lastUpdate": last_date}
 
 
+TRADED_REGIME_MAP = {
+    "QLD": "goldilocks",
+    "XLE": "reflation",
+    "XLU": "stagflation",
+    "XLP+IEF_5050": "disinflation",
+}
+
+
+def build_current_allocation() -> dict:
+    monthly = load_series("hybrid_qld_goldilocks_xle_reflation_returns.csv")
+    daily = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
+    monthly_holding = monthly["traded_holding"].iloc[-1]
+    daily_holding = daily["traded_holding"].iloc[-1]
+    return {
+        "asOf": max(monthly.index.max(), daily.index.max()).strftime("%Y-%m-%d"),
+        "monthly": {"holding": monthly_holding, "regime": TRADED_REGIME_MAP[monthly_holding]},
+        "daily": {"holding": daily_holding, "regime": TRADED_REGIME_MAP[daily_holding]},
+    }
+
+
 def build_regime_summary() -> dict:
     df = load_series("unlevered_monthly_qqq_returns.csv")
     df["period"] = df.index.to_period("M")
@@ -154,11 +174,12 @@ def replace_const(text: str, const_name: str, payload: dict) -> str:
     return text[:json_start] + new_json + text[end:]
 
 
-def patch_chart(daily: dict, monthly_table: dict, regime_summary: dict) -> None:
+def patch_chart(daily: dict, monthly_table: dict, regime_summary: dict, current_allocation: dict) -> None:
     text = CHART_PATH.read_text(encoding="utf-8")
     text = replace_const(text, "MONTHLY_TABLE_QQQ", monthly_table)
     text = replace_const(text, "DAILY", daily)
     text = replace_const(text, "REGIME_SUMMARY", regime_summary)
+    text = replace_const(text, "CURRENT_ALLOCATION", current_allocation)
     CHART_PATH.write_text(text, encoding="utf-8")
 
 
@@ -168,8 +189,9 @@ def main() -> None:
     daily = build_daily_blob()
     monthly_table = build_monthly_table()
     regime_summary = build_regime_summary()
+    current_allocation = build_current_allocation()
 
-    patch_chart(daily, monthly_table, regime_summary)
+    patch_chart(daily, monthly_table, regime_summary, current_allocation)
 
     print()
     print(f"[refresh] chart data through {daily['dates'][-1]} patched into {CHART_PATH}")

@@ -228,6 +228,50 @@
     color: #ffffff;
   }
 
+  .allocation-banner {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .allocation-banner-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .allocation-banner-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .allocation-banner-asof { font-size: 12px; color: var(--text-muted); }
+  .allocation-banner-asof b { color: var(--text-secondary); font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+  .allocation-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .allocation-card {
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--text-primary);
+  }
+  .allocation-card-label { font-size: 12px; font-weight: 600; opacity: 0.85; }
+  .allocation-card-holding {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .allocation-card-sub { font-size: 12px; font-weight: 500; opacity: 0.8; margin-left: 6px; }
+  .allocation-card-regime { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+  .allocation-card-right { display: flex; flex-direction: column; align-items: flex-end; }
+  .allocation-card.regime-reflation { background: var(--regime-reflation); color: #1a1a1a; }
+  .allocation-card.regime-stagflation { background: var(--regime-stagflation); }
+  .allocation-card.regime-goldilocks { background: var(--regime-goldilocks); }
+  .allocation-card.regime-disinflation { background: var(--regime-disinflation); }
+
   .stat-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -472,6 +516,29 @@
       <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
     </button>
   </header>
+
+  <div class="allocation-banner" id="allocationBanner">
+    <div class="allocation-banner-head">
+      <div class="allocation-banner-title">Current Recommended Allocation &mdash; Hybrid (QLD/XLE)</div>
+      <div class="allocation-banner-asof" id="allocationAsOf"></div>
+    </div>
+    <div class="allocation-cards">
+      <div class="allocation-card" id="allocationMonthly">
+        <div class="allocation-card-label">Monthly Rebalance</div>
+        <div class="allocation-card-right">
+          <div class="allocation-card-holding"></div>
+          <div class="allocation-card-regime"></div>
+        </div>
+      </div>
+      <div class="allocation-card" id="allocationDaily">
+        <div class="allocation-card-label">Daily Signal</div>
+        <div class="allocation-card-right">
+          <div class="allocation-card-holding"></div>
+          <div class="allocation-card-regime"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="filter-bar">
     <div class="filter-field">
@@ -799,6 +866,24 @@ function renderPie(svgId, dataObj) {
 }
 renderPie("pieTime", REGIME_SUMMARY.time);
 renderPie("pieReturn", REGIME_SUMMARY.returnShare);
+
+// ---- Current-allocation banner (Hybrid QLD/XLE, monthly + daily-signal) ----
+const CURRENT_ALLOCATION = {"asOf": "2026-09-21", "monthly": {"holding": "XLE", "regime": "reflation"}, "daily": {"holding": "XLE", "regime": "reflation"}};
+const HOLDING_INFO = { "XLE": "XLE (Energy)", "QLD": "QLD (2x Nasdaq-100)", "XLU": "XLU (Utilities)", "XLP+IEF_5050": "XLP + IEF (50/50)" };
+
+function renderAllocationBanner(alloc) {
+  document.getElementById("allocationAsOf").innerHTML = `As of <b>${fmtDate(alloc.asOf)}</b>`;
+  const fill = (cardId, info) => {
+    const card = document.getElementById(cardId);
+    card.classList.remove("regime-reflation", "regime-goldilocks", "regime-stagflation", "regime-disinflation");
+    card.classList.add("regime-" + info.regime);
+    card.querySelector(".allocation-card-holding").textContent = HOLDING_INFO[info.holding] || info.holding;
+    card.querySelector(".allocation-card-regime").textContent = REGIME_LABELS[info.regime] + " regime";
+  };
+  fill("allocationMonthly", alloc.monthly);
+  fill("allocationDaily", alloc.daily);
+}
+renderAllocationBanner(CURRENT_ALLOCATION);
 
 function sliceReturns(startISO, endISO) {
   const idxs = [];
