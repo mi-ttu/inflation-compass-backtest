@@ -2,9 +2,9 @@
 app): bootstraps the database from scratch if it doesn't exist yet
 (first run after install), otherwise just does the normal incremental
 refresh. Either way, ends with an up-to-date interactive_chart.html, then
-checks whether the Hybrid (QLD/XLE), Daily variant's allocation changed
-and emails about it if so (see notify.py -- silently skipped if email
-isn't configured).
+sends a daily status email reporting the Hybrid (QLD/XLE), Daily variant's
+current holding -- every trading day this runs, not just on a change (see
+notify.py -- silently skipped if email isn't configured).
 
 Scheduled Mon-Fri at 2:30 PM Central, same timing as the MaxAlpha backtest
 project (see installer/install.ps1) -- a Task Scheduler weekly trigger

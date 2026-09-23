@@ -925,7 +925,7 @@ renderPie("pieTime", REGIME_SUMMARY.time);
 renderPie("pieReturn", REGIME_SUMMARY.returnShare);
 
 // ---- Current-allocation banner (Hybrid QLD/XLE, monthly + daily-signal) ----
-const CURRENT_ALLOCATION = {"asOf": "2026-09-21", "monthly": {"holding": "XLE", "regime": "reflation"}, "daily": {"holding": "XLE", "regime": "reflation"}};
+const CURRENT_ALLOCATION = {"asOf": "2026-09-21", "monthly": {"holding": "XLE", "regime": "reflation", "since": "2026-09-01"}, "daily": {"holding": "XLE", "regime": "reflation", "since": "2026-08-14"}};
 const HOLDING_INFO = { "XLE": "XLE (Energy)", "QLD": "QLD (2x Nasdaq-100)", "XLU": "XLU (Utilities)", "XLP+IEF_5050": "XLP + IEF (50/50)" };
 
 function renderAllocationBanner(alloc) {

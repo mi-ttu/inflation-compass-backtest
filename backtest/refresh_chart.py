@@ -142,6 +142,16 @@ TRADED_REGIME_MAP = {
 }
 
 
+def _holding_since(df: pd.DataFrame) -> str:
+    """First date of the current, still-ongoing run of the same holding --
+    walks backward from the last row while the holding stays the same."""
+    holding = df["traded_holding"].iloc[-1]
+    idx = len(df) - 1
+    while idx > 0 and df["traded_holding"].iloc[idx - 1] == holding:
+        idx -= 1
+    return df.index[idx].strftime("%Y-%m-%d")
+
+
 def build_current_allocation() -> dict:
     monthly = load_series("hybrid_qld_goldilocks_xle_reflation_returns.csv")
     daily = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
@@ -149,8 +159,14 @@ def build_current_allocation() -> dict:
     daily_holding = daily["traded_holding"].iloc[-1]
     return {
         "asOf": max(monthly.index.max(), daily.index.max()).strftime("%Y-%m-%d"),
-        "monthly": {"holding": monthly_holding, "regime": TRADED_REGIME_MAP[monthly_holding]},
-        "daily": {"holding": daily_holding, "regime": TRADED_REGIME_MAP[daily_holding]},
+        "monthly": {
+            "holding": monthly_holding, "regime": TRADED_REGIME_MAP[monthly_holding],
+            "since": _holding_since(monthly),
+        },
+        "daily": {
+            "holding": daily_holding, "regime": TRADED_REGIME_MAP[daily_holding],
+            "since": _holding_since(daily),
+        },
     }
 
 

@@ -1,13 +1,17 @@
-"""Sends an email if and only if the Hybrid (QLD/XLE), Daily variant's
-current holding has changed since the last run -- i.e. exactly when the
-regime the strategy is in switches, not on every refresh.
+"""Sends a daily status email -- unconditionally, every trading day this
+runs -- reporting the Hybrid (QLD/XLE), Daily variant's current holding,
+how long it's been held, and (when today's refresh actually changed it)
+what it switched from.
 
 Sent as multipart/alternative: a plain-text version (the fallback used by
 any client that can't render HTML) plus a rich-text HTML version, styled
-the same way as the MaxAlpha backtest's daily status email (colored cards,
-inline CSS, no external stylesheet since email clients don't reliably
-support one) -- adapted here to a before/after change alert rather than a
-daily status, since this project emails on regime change, not every day.
+the same way as the MaxAlpha backtest project's daily status email
+(colored cards, inline CSS, no external stylesheet since email clients
+don't reliably support one). Adapted from MaxAlpha's own "Currently Held /
+Next Session's Signal" two-card layout: this project doesn't have a live
+intraday-preview subsystem, so there's no "next signal" to show -- instead
+the single Current Allocation card shows how long the position has been
+held, and a second card only appears on the day it actually changes.
 HOLDING_COLOR_HEX below are deliberately more saturated than the
 dashboard's own --regime-* pastel tokens: those are tuned for dark text
 laid over them, these are tuned for white text on a solid card, so they
@@ -67,7 +71,7 @@ def load_config() -> dict | None:
     return cfg
 
 
-def load_last_allocation() -> dict | None:
+def load_last_sent() -> dict | None:
     if not STATE_PATH.exists():
         return None
     try:
@@ -76,9 +80,9 @@ def load_last_allocation() -> dict | None:
         return None
 
 
-def save_last_allocation(daily_info: dict) -> None:
+def save_last_sent(daily_info: dict) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(daily_info), encoding="utf-8")
+    STATE_PATH.write_text(json.dumps({"holding": daily_info["holding"], "regime": daily_info["regime"]}), encoding="utf-8")
 
 
 def send_email(cfg: dict, subject: str, text_body: str, html_body: str) -> None:
@@ -99,54 +103,70 @@ def send_email(cfg: dict, subject: str, text_body: str, html_body: str) -> None:
         server.send_message(msg)
 
 
-def format_change_email_text(as_of: str, last: dict, current: dict) -> tuple[str, str]:
-    old_holding = HOLDING_LABELS.get(last.get("holding"), last.get("holding"))
-    old_regime = REGIME_LABELS.get(last.get("regime"), last.get("regime"))
-    new_holding = HOLDING_LABELS.get(current["holding"], current["holding"])
-    new_regime = REGIME_LABELS.get(current["regime"], current["regime"])
+def _describe(holding: str, regime: str) -> str:
+    return f"{HOLDING_LABELS.get(holding, holding)} — {REGIME_LABELS.get(regime, regime)}"
 
-    subject = f"Inflation Compass: daily allocation changed to {new_holding}"
+
+def format_status_email_text(as_of: str, daily: dict, changed_from: dict | None) -> tuple[str, str]:
+    holding_label = HOLDING_LABELS.get(daily["holding"], daily["holding"])
+    subject = f"Inflation Compass daily status: holding {holding_label}"
+
+    if changed_from is not None:
+        subject = f"Inflation Compass: allocation changed to {holding_label}"
+        change_line = (
+            f"This changed today -- previous holding was {_describe(changed_from['holding'], changed_from['regime'])}.\n\n"
+        )
+    else:
+        change_line = ""
+
     body = (
-        f"The Hybrid (QLD/XLE), Daily variant's allocation changed as of {as_of}.\n\n"
-        f"Previous: {old_holding} — {old_regime}\n"
-        f"Now:      {new_holding} — {new_regime}\n\n"
+        f"Hybrid (QLD/XLE), Daily variant -- current status as of {as_of}.\n\n"
+        f"Currently holding: {_describe(daily['holding'], daily['regime'])}\n"
+        f"Held since: {daily['since']}\n\n"
+        f"{change_line}"
         "Not investment advice — see the dashboard for the full picture."
     )
     return subject, body
 
 
-def _card_html(label: str, color: str, holding: str, sub_html: str) -> str:
+def _card_html(label: str, color: str, holding: str, sub_html: str, extra_html: str = "") -> str:
     holding_label = HOLDING_LABELS.get(holding, holding)
     return f"""
 <div style="background:{color};border-radius:10px;padding:16px 18px;margin-bottom:14px;">
   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.85);font-family:{FONT_STACK};">{label}</div>
   <div style="font-size:23px;font-weight:700;color:#ffffff;margin-top:5px;font-family:{MONO_STACK};">{holding_label}</div>
   <div style="font-size:12.5px;color:rgba(255,255,255,.92);margin-top:5px;font-family:{FONT_STACK};">{sub_html}</div>
+  {extra_html}
 </div>"""
 
 
-def format_change_email_html(as_of: str, last: dict, current: dict) -> str:
-    old_color = HOLDING_COLOR_HEX.get(last.get("holding"), "#5b6272")
-    new_color = HOLDING_COLOR_HEX.get(current["holding"], "#5b6272")
+def format_status_email_html(as_of: str, daily: dict, changed_from: dict | None) -> str:
+    color = HOLDING_COLOR_HEX.get(daily["holding"], "#5b6272")
+    current_card = _card_html(
+        "Current Allocation", color, daily["holding"],
+        f"{REGIME_LABELS.get(daily['regime'], daily['regime'])} &mdash; held since <b>{daily['since']}</b>",
+    )
 
-    old_card = _card_html(
-        "Previous Allocation", old_color, last.get("holding"),
-        REGIME_LABELS.get(last.get("regime"), last.get("regime")),
-    )
-    new_card = _card_html(
-        "New Allocation", new_color, current["holding"],
-        f"{REGIME_LABELS.get(current['regime'], current['regime'])} &mdash; as of {as_of}",
-    )
+    if changed_from is not None:
+        prev_color = HOLDING_COLOR_HEX.get(changed_from["holding"], "#5b6272")
+        prev_card = _card_html(
+            "Previous Allocation (until today)", prev_color, changed_from["holding"],
+            REGIME_LABELS.get(changed_from["regime"], changed_from["regime"]),
+        )
+        cards = prev_card + current_card
+        title = "Inflation Compass — Allocation Changed"
+    else:
+        cards = current_card
+        title = "Inflation Compass Daily Status"
 
     return f"""
 <div style="max-width:600px;margin:0 auto;font-family:{FONT_STACK};color:#171a24;background:#ffffff;">
   <div style="padding:22px 24px 16px;border-bottom:2px solid #eef0f6;">
-    <div style="font-size:19px;font-weight:700;">Inflation Compass Allocation Change</div>
+    <div style="font-size:19px;font-weight:700;">{title}</div>
     <div style="font-size:12.5px;color:#5b6272;margin-top:3px;">Hybrid (QLD/XLE), Daily &middot; as of <b>{as_of}</b></div>
   </div>
   <div style="padding:20px 24px 4px;">
-    {old_card}
-    {new_card}
+    {cards}
   </div>
   <div style="padding:6px 24px 22px;font-size:12px;color:#5b6272;line-height:1.6;font-family:{FONT_STACK};">
     <b>Not investment advice</b> &mdash; see the dashboard for the full picture.
@@ -156,35 +176,27 @@ def format_change_email_html(as_of: str, last: dict, current: dict) -> str:
 
 def check_and_notify(current_allocation: dict) -> None:
     """current_allocation is refresh_chart.build_current_allocation()'s
-    return value: {"asOf": ..., "monthly": {...}, "daily": {...}}."""
+    return value: {"asOf": ..., "monthly": {...}, "daily": {...}}. Sends a
+    status email every time this is called (i.e. every trading day the
+    scheduled task runs) -- not just on a regime change."""
     daily = current_allocation["daily"]
-    last = load_last_allocation()
-
-    if last is None:
-        # First run ever (or the state file was cleared) -- nothing to
-        # compare against yet, so just record it rather than treating a
-        # first observation as a "change".
-        save_last_allocation(daily)
-        return
-
-    if last.get("holding") == daily.get("holding"):
-        return  # unchanged -- no email, by design
+    as_of = current_allocation["asOf"]
+    last_sent = load_last_sent()
+    changed_from = last_sent if (last_sent is not None and last_sent.get("holding") != daily.get("holding")) else None
 
     cfg = load_config()
     if cfg is None:
-        print("[notify] allocation changed but email_config.json is missing/incomplete -- skipping notification")
-        save_last_allocation(daily)
+        print("[notify] email_config.json is missing/incomplete -- skipping daily status email")
+        save_last_sent(daily)
         return
 
-    as_of = current_allocation["asOf"]
-    subject, text_body = format_change_email_text(as_of, last, daily)
-    html_body = format_change_email_html(as_of, last, daily)
+    subject, text_body = format_status_email_text(as_of, daily, changed_from)
+    html_body = format_status_email_html(as_of, daily, changed_from)
     try:
         send_email(cfg, subject, text_body, html_body)
-        old_label = HOLDING_LABELS.get(last.get("holding"), last.get("holding"))
-        new_label = HOLDING_LABELS.get(daily["holding"], daily["holding"])
-        print(f"[notify] sent allocation-change email: {old_label} -> {new_label}")
+        tag = "changed" if changed_from is not None else "unchanged"
+        print(f"[notify] sent daily status email ({tag}): {daily['holding']}")
     except Exception as exc:
         print(f"[notify] FAILED to send email: {exc}")
 
-    save_last_allocation(daily)
+    save_last_sent(daily)

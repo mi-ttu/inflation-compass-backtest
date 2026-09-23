@@ -117,22 +117,23 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd 
   -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName "InflationCompassChartRefresh" -Action $action `
   -Trigger $trigger -Settings $settings -RunLevel Limited `
-  -Description "Inflation Compass backtest: refresh + allocation-change email, trading days at 2:30 PM"
+  -Description "Inflation Compass backtest: refresh + daily status email, trading days at 2:30 PM"
 ```
 
 Note that this only regenerates the local HTML file — pushing the refreshed
 data to the published Artifact URL still requires a Claude Code session,
 since the Artifact tool isn't callable from a bare script.
 
-## Email alert on allocation change
+## Daily status email
 
 `run_daily.py` (what the scheduled task above actually calls, and what
-`install.ps1` registers too) checks after every refresh whether the Hybrid
-(QLD/XLE), Daily variant's current holding differs from the last run's —
-i.e. whether the regime actually switched — and emails **only** when it
-has, via `backtest/notify.py`. The email is sent as rich HTML (styled the
-same way as the MaxAlpha backtest project's status email — colored cards,
-inline CSS) with a plain-text fallback for clients that can't render HTML.
+`install.ps1` registers too) sends a status email **every trading day it
+runs** — via `backtest/notify.py` — reporting the Hybrid (QLD/XLE), Daily
+variant's current holding and how long it's been held. On a day the
+holding actually changed, the email also shows what it changed from. The
+email is sent as rich HTML (styled the same way as the MaxAlpha backtest
+project's status email — colored cards, inline CSS) with a plain-text
+fallback for clients that can't render HTML.
 
 It's opt-in and fails safe: if `backtest/email_config.json` doesn't exist
 or is incomplete, notification is silently skipped with a printed note —
@@ -146,11 +147,9 @@ enable it:
    and fill in your Gmail address, the app password, and where you want
    the alert sent. This file is git-ignored — it never gets committed.
 
-`data/last_allocation.json` tracks the last-seen holding (also git-ignored,
-regenerated locally). The very first run after enabling this just records
-the current holding without emailing, since there's nothing yet to compare
-it against — you'll get an email starting from the next actual regime
-change.
+`data/last_allocation.json` tracks the last-sent holding (also
+git-ignored, regenerated locally) purely to detect a same-day change for
+the email's content — it doesn't gate whether an email goes out at all.
 
 ## Standalone install (no Python required)
 
