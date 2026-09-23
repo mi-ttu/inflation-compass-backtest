@@ -9,8 +9,11 @@
 #   3. Installs the app's dependencies into that runtime.
 #   4. Runs the app once immediately (first-time database bootstrap --
 #      pulls ~36 years of public market data, takes a few minutes).
-#   5. Registers a daily Windows Scheduled Task (current-user scope, no
-#      stored credentials) so the dashboard stays current going forward.
+#   5. Registers a Windows Scheduled Task, Mon-Fri at 2:30 PM (current-
+#      user scope, no stored credentials) so the dashboard stays current
+#      going forward. The task fires every weekday; run_daily.py itself
+#      checks the NYSE trading calendar and no-ops on holidays, since a
+#      Task Scheduler weekly trigger alone can't skip those.
 #   6. Drops a desktop shortcut to the dashboard.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File install.ps1
@@ -31,7 +34,10 @@ $PythonVersion = "3.13.5"
 $PythonEmbedUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip"
 $GetPipUrl = "https://bootstrap.pypa.io/get-pip.py"
 $TaskName = "InflationCompassDailyRefresh"
-$DailyTime = "6:00AM"
+# 2:30 PM local system time -- 30 min before the NYSE close, matching the
+# MaxAlpha backtest project's schedule. On this machine's Central Time
+# config that's 2:30 PM CST/CDT.
+$DailyTime = "2:30PM"
 
 $SourceApp = Join-Path $PSScriptRoot "app"
 if (-not (Test-Path $SourceApp)) {
@@ -96,10 +102,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "First run failed (exit code $LASTEXITCODE) -- see the output above."
 }
 
-# ---- 5. Register the daily Scheduled Task ----
-Write-Host "Registering daily refresh task ..."
+# ---- 5. Register the Mon-Fri Scheduled Task ----
+Write-Host "Registering refresh task (Mon-Fri, $DailyTime) ..."
 $action = New-ScheduledTaskAction -Execute $PythonExe -Argument "`"$(Join-Path $DestApp 'backtest\run_daily.py')`"" -WorkingDirectory $DestApp
-$trigger = New-ScheduledTaskTrigger -Daily -At $DailyTime
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $DailyTime
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
@@ -108,7 +114,7 @@ if ($existing) {
     Set-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings | Out-Null
 } else {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Limited -Description "Daily refresh of the Inflation Compass backtest dashboard" | Out-Null
+        -RunLevel Limited -Description "Inflation Compass backtest: refresh + allocation-change email, trading days at 2:30 PM" | Out-Null
 }
 
 # ---- 6. Desktop shortcut ----
@@ -124,4 +130,4 @@ Write-Host ""
 Write-Host "Done." -ForegroundColor Green
 Write-Host "Dashboard: $chartPath"
 Write-Host "Desktop shortcut created."
-Write-Host "Daily refresh scheduled for $DailyTime (task: $TaskName)."
+Write-Host "Refresh scheduled Mon-Fri at $DailyTime, local time (task: $TaskName)."

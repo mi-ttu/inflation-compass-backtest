@@ -56,12 +56,16 @@ monthly and daily-signal), and patches the fresh data — including the
 current-allocation banner and the daily calendar table — into
 `backtest/interactive_chart.html` in place.
 
-The underlying data only updates once per trading day (after market
-close), so running this more than daily is wasted effort — but daily
-*is* the right default now that the dashboard includes daily-signal
-variants (checked every trading day, not just month-end): a stale banner
-or calendar table could show yesterday's allocation as still current when
-it's actually changed. See the Task Scheduler setup below.
+The underlying data only updates once per trading day, so running this more
+than daily is wasted effort — but daily *is* the right default now that the
+dashboard includes daily-signal variants (checked every trading day, not
+just month-end): a stale banner or calendar table could show yesterday's
+allocation as still current when it's actually changed. See the Task
+Scheduler setup below.
+
+Note `refresh_chart.py` on its own doesn't gate on the trading calendar or
+send email — use `backtest/run_daily.py` for that (see below); it's what
+the scheduled task and `install.ps1` actually call.
 
 ## Viewing the chart
 
@@ -78,14 +82,26 @@ Claude Code session (the Artifact tool isn't callable from a bare script).
 ## Keeping it current automatically
 
 A Windows Scheduled Task named `InflationCompassChartRefresh` runs
-**daily at 6:00 AM** local time, via `backtest/run_refresh.ps1` (a thin
-wrapper around `refresh_chart.py` that logs full output, UTF-8, to
+**Mon-Fri at 2:30 PM Central** (30 min before the NYSE close, matching the
+MaxAlpha backtest project's schedule), via `backtest/run_refresh.ps1` (a
+thin wrapper around `run_daily.py` that logs full output, UTF-8, to
 `backtest/refresh_logs/`, keeping the 20 most recent runs). It's configured
 to catch up automatically if the machine was off or asleep at the scheduled
 time (`StartWhenAvailable`), and runs under the logged-in user account, so
 no credentials are stored.
 
-(The standalone-install path below sets up an equivalent daily task
+The task fires every weekday, but `run_daily.py` checks the NYSE
+`trading_calendar` itself and no-ops on weekday holidays (Thanksgiving,
+Christmas, ...) that a plain Mon-Fri trigger can't skip on its own — see
+`is_trading_day()` in that file.
+
+Because the run happens before the close, "latest data" means the most
+recently *finalized* session's close — yfinance returns a partial,
+still-in-progress bar for the current session until it actually settles,
+and `load_bronze_to_silver.py` filters that incomplete row out rather than
+let it violate the database's NOT NULL constraint.
+
+(The standalone-install path below sets up an equivalent task
 automatically — see that section instead if you used `install.ps1`.)
 
 This task is local to each machine — set up separately from `bootstrap.py`
@@ -96,12 +112,12 @@ another machine:
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
   -Argument '-NoProfile -ExecutionPolicy Bypass -File "<repo path>\backtest\run_refresh.ps1"' `
   -WorkingDirectory "<repo path>"
-$trigger = New-ScheduledTaskTrigger -Daily -At 6:00AM
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 2:30PM
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
   -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName "InflationCompassChartRefresh" -Action $action `
   -Trigger $trigger -Settings $settings -RunLevel Limited `
-  -Description "Daily refresh of the Inflation Compass backtest chart"
+  -Description "Inflation Compass backtest: refresh + allocation-change email, trading days at 2:30 PM"
 ```
 
 Note that this only regenerates the local HTML file — pushing the refreshed
@@ -114,7 +130,9 @@ since the Artifact tool isn't callable from a bare script.
 `install.ps1` registers too) checks after every refresh whether the Hybrid
 (QLD/XLE), Daily variant's current holding differs from the last run's —
 i.e. whether the regime actually switched — and emails **only** when it
-has, via `backtest/notify.py`.
+has, via `backtest/notify.py`. The email is sent as rich HTML (styled the
+same way as the MaxAlpha backtest project's status email — colored cards,
+inline CSS) with a plain-text fallback for clients that can't render HTML.
 
 It's opt-in and fails safe: if `backtest/email_config.json` doesn't exist
 or is incomplete, notification is silently skipped with a printed note —
@@ -173,9 +191,9 @@ rights needed):
 3. Runs the app once immediately: first-time database bootstrap (pulls
    ~36 years of public data, a few minutes) so there's something to see
    right away.
-4. Registers a **daily** Windows Scheduled Task (current-user scope, no
-   stored credentials, `StartWhenAvailable` so it catches up if the
-   machine was off) so the dashboard always reflects data through the
+4. Registers a **Mon-Fri, 2:30 PM** Windows Scheduled Task (current-user
+   scope, no stored credentials, `StartWhenAvailable` so it catches up if
+   the machine was off) so the dashboard always reflects data through the
    most recent trading day, with no manual steps.
 5. Drops a desktop shortcut straight to the dashboard.
 

@@ -6,10 +6,19 @@ checks whether the Hybrid (QLD/XLE), Daily variant's allocation changed
 and emails about it if so (see notify.py -- silently skipped if email
 isn't configured).
 
+Scheduled Mon-Fri at 2:30 PM Central, same timing as the MaxAlpha backtest
+project (see installer/install.ps1) -- a Task Scheduler weekly trigger
+alone can't skip NYSE holidays that fall on a weekday (Thanksgiving,
+Christmas, ...), so that's checked here instead, via the same
+trading_calendar the rest of the pipeline uses.
+
 Usage: python.exe backtest/run_daily.py
 """
 import sys
+from datetime import date
 from pathlib import Path
+
+import duckdb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -20,7 +29,21 @@ import refresh_chart
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "curated.duckdb"
 
 
+def is_trading_day(d: date) -> bool:
+    if not DB_PATH.exists():
+        return True  # fresh install, no calendar yet -- let bootstrap run regardless
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+    row = con.execute("SELECT 1 FROM trading_calendar WHERE trading_date = ?", [d]).fetchone()
+    con.close()
+    return row is not None
+
+
 def main() -> None:
+    today = date.today()
+    if not is_trading_day(today):
+        print(f"[run_daily] {today} is not an NYSE trading day -- skipping refresh and notification.")
+        return
+
     if DB_PATH.exists():
         refresh_chart.main()
     else:

@@ -87,6 +87,18 @@ def load_yfinance(con: duckdb.DuckDBPyConnection) -> None:
         )[
             ["ticker", "trading_date", "open", "high", "low", "close", "volume", "vendor_adj_close", "source"]
         ]
+        # A pull made before today's close includes a partial in-progress
+        # bar for the current session (yfinance leaves close as NaN until
+        # the session actually finishes) -- drop it rather than let it
+        # violate the NOT NULL constraint. This is expected now that the
+        # scheduled refresh runs at 2:30 PM Central, before the 4pm ET
+        # close: "latest data" naturally means yesterday's finalized close
+        # until today's actually settles.
+        incomplete = prices["close"].isna()
+        if incomplete.any():
+            dropped_dates = prices.loc[incomplete, "trading_date"].tolist()
+            print(f"[silver] {ticker}: dropping {incomplete.sum()} incomplete in-progress bar(s): {dropped_dates}")
+            prices = prices[~incomplete]
         con.execute("DELETE FROM equity_prices WHERE ticker = ?", [ticker])
         con.execute(
             """

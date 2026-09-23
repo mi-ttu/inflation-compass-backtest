@@ -32,6 +32,10 @@
     --regime-stagflation: rgba(210,48,48,0.20);
     --regime-goldilocks: rgba(10,225,90,0.42);
     --regime-disinflation: rgba(212,146,20,0.26);
+    --regime-bg-reflation: rgba(135,206,235,0.15);
+    --regime-bg-stagflation: rgba(210,48,48,0.15);
+    --regime-bg-goldilocks: rgba(10,225,90,0.15);
+    --regime-bg-disinflation: rgba(212,146,20,0.15);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -61,6 +65,10 @@
       --regime-stagflation: rgba(235,95,95,0.28);
       --regime-goldilocks: rgba(25,245,120,0.38);
       --regime-disinflation: rgba(230,175,55,0.28);
+      --regime-bg-reflation: rgba(135,206,235,0.15);
+      --regime-bg-stagflation: rgba(235,95,95,0.15);
+      --regime-bg-goldilocks: rgba(25,245,120,0.15);
+      --regime-bg-disinflation: rgba(230,175,55,0.15);
     }
   }
   :root[data-theme="dark"] {
@@ -90,6 +98,10 @@
     --regime-stagflation: rgba(235,95,95,0.28);
     --regime-goldilocks: rgba(25,245,120,0.38);
     --regime-disinflation: rgba(230,175,55,0.28);
+    --regime-bg-reflation: rgba(135,206,235,0.15);
+    --regime-bg-stagflation: rgba(235,95,95,0.15);
+    --regime-bg-goldilocks: rgba(25,245,120,0.15);
+    --regime-bg-disinflation: rgba(230,175,55,0.15);
   }
 
   * { box-sizing: border-box; }
@@ -436,7 +448,7 @@
     padding-bottom: 4px;
     border-bottom: 1px solid var(--border);
   }
-  .daily-calendar-table tbody tr { height: 15px; }
+  .daily-calendar-table tbody tr { height: 29px; }
   .daily-calendar-table tbody td.year-label {
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px;
@@ -935,6 +947,12 @@ const DAILY_CALENDAR_QLD_XLE = {"runs": [{"start": "1990-01-02", "end": "1990-01
 const MONTH_DAYS_366 = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const REGIME_CODE_MAP = { R: "reflation", G: "goldilocks", S: "stagflation", D: "disinflation" };
+const REGIME_BG = {
+  reflation: "var(--regime-bg-reflation)",
+  goldilocks: "var(--regime-bg-goldilocks)",
+  stagflation: "var(--regime-bg-stagflation)",
+  disinflation: "var(--regime-bg-disinflation)",
+};
 
 function renderDailyCalendarTable(data) {
   if (!data.rows.length) return;
@@ -1007,7 +1025,7 @@ function niceTicksInRange(min, max, targetCount) {
 // Clears and fully rebuilds the target SVG each call, so it's safe
 // to call again whenever the date filter changes.
 // ============================================================
-function renderChart({ svgId, tooltipId, shellId, data, scale, areaFill, valueFmt, tooltipFmt, visible }) {
+function renderChart({ svgId, tooltipId, shellId, data, scale, areaFill, valueFmt, tooltipFmt, visible, regimeRuns }) {
   const svg = document.getElementById(svgId);
   svg.innerHTML = "";
 
@@ -1033,6 +1051,23 @@ function renderChart({ svgId, tooltipId, shellId, data, scale, areaFill, valueFm
   const dates = data.dates.map(d => new Date(d).getTime());
   const x0 = dates[0], x1 = dates[dates.length - 1];
   const xScale = t => M.left + (t - x0) / (x1 - x0) * plotW;
+
+  if (regimeRuns) {
+    regimeRuns.forEach(run => {
+      const runStart = new Date(run.start).getTime();
+      const runEnd = new Date(run.end).getTime();
+      if (runEnd < x0 || runStart > x1) return;
+      const clippedStart = Math.max(runStart, x0);
+      const clippedEnd = Math.min(runEnd, x1);
+      const bx = xScale(clippedStart);
+      const bw = Math.max(xScale(clippedEnd) - bx, 0.5);
+      const regime = REGIME_CODE_MAP[run.regime];
+      svg.appendChild(el("rect", {
+        class: "regime-band", x: bx, y: M.top, width: bw, height: plotH,
+        style: `fill:${REGIME_BG[regime]};`,
+      }));
+    });
+  }
 
   let yScale, yTicks;
   if (scale === "log") {
@@ -1380,6 +1415,7 @@ function redraw() {
     svgId: "chartGrowth", tooltipId: "tooltipGrowth", shellId: "shellGrowth",
     data: growthData, scale: "log", areaFill: false,
     valueFmt: fmtCompact, tooltipFmt: fmtMoney, visible,
+    regimeRuns: DAILY_CALENDAR_QLD_XLE.runs,
   });
 
   renderChart({
