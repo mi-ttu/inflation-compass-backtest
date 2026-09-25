@@ -128,12 +128,16 @@ since the Artifact tool isn't callable from a bare script.
 
 `run_daily.py` (what the scheduled task above actually calls, and what
 `install.ps1` registers too) sends a status email **every trading day it
-runs** — via `backtest/notify.py` — reporting the Hybrid (QLD/XLE), Daily
-variant's current holding and how long it's been held. On a day the
-holding actually changed, the email also shows what it changed from. The
-email is sent as rich HTML (styled the same way as the MaxAlpha backtest
-project's status email — colored cards, inline CSS) with a plain-text
-fallback for clients that can't render HTML.
+runs** — via `backtest/notify.py`, laid out like the MaxAlpha backtest
+project's status email — with two cards for the Hybrid (QLD/XLE), Daily
+variant: **Currently Held** (decided at the prior close) and **Recommended
+at Today's Close**. The recommendation is a live preview
+(`backtest/live_preview.py`): the regime signal recomputed with delayed
+intraday quotes for ^GSPC and the seven sector ETFs spliced in as today's
+row (T5YIE isn't live — FRED lags — so its latest published value is
+carried forward). It's flagged "not final" while the session is open, and
+the email calls out a **CHANGE** when the two cards differ. Sent as rich
+HTML with a plain-text fallback.
 
 It's opt-in and fails safe: if `backtest/email_config.json` doesn't exist
 or is incomplete, notification is silently skipped with a printed note —
@@ -146,10 +150,6 @@ enable it:
 2. Copy `backtest/email_config.example.json` to `backtest/email_config.json`
    and fill in your Gmail address, the app password, and where you want
    the alert sent. This file is git-ignored — it never gets committed.
-
-`data/last_allocation.json` tracks the last-sent holding (also
-git-ignored, regenerated locally) purely to detect a same-day change for
-the email's content — it doesn't gate whether an email goes out at all.
 
 ## Standalone install (no Python required)
 

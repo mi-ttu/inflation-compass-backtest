@@ -3,8 +3,9 @@ app): bootstraps the database from scratch if it doesn't exist yet
 (first run after install), otherwise just does the normal incremental
 refresh. Either way, ends with an up-to-date interactive_chart.html, then
 sends a daily status email reporting the Hybrid (QLD/XLE), Daily variant's
-current holding -- every trading day this runs, not just on a change (see
-notify.py -- silently skipped if email isn't configured).
+current allocation and the allocation recommended at today's close (see
+live_preview.py) -- every trading day this runs, not just on a change
+(see notify.py -- silently skipped if email isn't configured).
 
 Scheduled Mon-Fri at 2:30 PM Central, same timing as the MaxAlpha backtest
 project (see installer/install.ps1) -- a Task Scheduler weekly trigger
@@ -23,6 +24,7 @@ import duckdb
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import bootstrap
+import live_preview
 import notify
 import refresh_chart
 
@@ -52,8 +54,12 @@ def main() -> None:
         print()
         bootstrap.main()
 
-    current_allocation = refresh_chart.build_current_allocation()
-    notify.check_and_notify(current_allocation)
+    try:
+        preview = live_preview.build_preview()
+    except Exception as exc:
+        print(f"[run_daily] could not build the live preview, skipping the status email: {exc}")
+        return
+    notify.send_daily_status(preview)
 
 
 if __name__ == "__main__":

@@ -1,27 +1,25 @@
 """Sends a daily status email -- unconditionally, every trading day this
-runs -- reporting the Hybrid (QLD/XLE), Daily variant's current holding,
-how long it's been held, and (when today's refresh actually changed it)
-what it switched from.
+runs -- reporting the Hybrid (QLD/XLE), Daily variant's current allocation
+(held today, decided at the prior close) and the allocation the signal
+recommends at the end of today's session (see live_preview.py: a live
+intraday quote spliced in if today's session isn't over yet, or today's
+real final close if it already is).
 
 Sent as multipart/alternative: a plain-text version (the fallback used by
-any client that can't render HTML) plus a rich-text HTML version, styled
-the same way as the MaxAlpha backtest project's daily status email
-(colored cards, inline CSS, no external stylesheet since email clients
-don't reliably support one). Adapted from MaxAlpha's own "Currently Held /
-Next Session's Signal" two-card layout: this project doesn't have a live
-intraday-preview subsystem, so there's no "next signal" to show -- instead
-the single Current Allocation card shows how long the position has been
-held, and a second card only appears on the day it actually changes.
-HOLDING_COLOR_HEX below are deliberately more saturated than the
-dashboard's own --regime-* pastel tokens: those are tuned for dark text
-laid over them, these are tuned for white text on a solid card, so they
-are NOT meant to be kept in sync hex-for-hex with the dashboard.
+any client that can't render HTML) plus a rich-text HTML version, laid out
+like the MaxAlpha backtest project's daily status email (a "Currently
+Held" card and a "Recommended at Today's Close" card, colored cards,
+inline CSS, no external stylesheet since email clients don't reliably
+support one). HOLDING_COLOR_HEX below are deliberately more saturated than
+the dashboard's own --regime-* pastel tokens: those are tuned for dark
+text laid over them, these are tuned for white text on a solid card, so
+they are NOT meant to be kept in sync hex-for-hex with the dashboard.
 
 Reads SMTP credentials from a local, git-ignored email_config.json (see
 email_config.example.json for the expected shape and how to get a Gmail
-app password). If that file is missing or incomplete, notification is
-silently skipped with a printed note -- a normal data refresh should never
-fail just because email isn't configured, and this matters doubly for the
+app password). If that file is missing or incomplete, sending is silently
+skipped with a printed note -- a normal data refresh should never fail
+just because email isn't configured, and this matters doubly for the
 standalone-installed app, where most installs won't have set it up at all.
 
 Not meant to be run standalone -- called from run_daily.py after a refresh.
@@ -34,7 +32,6 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "backtest" / "email_config.json"
-STATE_PATH = PROJECT_ROOT / "data" / "last_allocation.json"
 
 HOLDING_LABELS = {
     "XLE": "XLE (Energy)",
@@ -71,20 +68,6 @@ def load_config() -> dict | None:
     return cfg
 
 
-def load_last_sent() -> dict | None:
-    if not STATE_PATH.exists():
-        return None
-    try:
-        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def save_last_sent(daily_info: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps({"holding": daily_info["holding"], "regime": daily_info["regime"]}), encoding="utf-8")
-
-
 def send_email(cfg: dict, subject: str, text_body: str, html_body: str) -> None:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -103,27 +86,52 @@ def send_email(cfg: dict, subject: str, text_body: str, html_body: str) -> None:
         server.send_message(msg)
 
 
-def _describe(holding: str, regime: str) -> str:
-    return f"{HOLDING_LABELS.get(holding, holding)} — {REGIME_LABELS.get(regime, regime)}"
+def _describe(info: dict) -> str:
+    holding = HOLDING_LABELS.get(info["holding"], info["holding"])
+    return f"{holding} — {REGIME_LABELS.get(info['regime'], info['regime'])}"
 
 
-def format_status_email_text(as_of: str, daily: dict, changed_from: dict | None) -> tuple[str, str]:
-    holding_label = HOLDING_LABELS.get(daily["holding"], daily["holding"])
-    subject = f"Inflation Compass daily status: holding {holding_label}"
+def _signal_inputs_text(preview_info: dict) -> str:
+    i = preview_info["inputs"]
+    growth = "above" if preview_info["growthUp"] else "below"
+    inflation = "ON" if preview_info["inflationOn"] else "OFF"
+    return (
+        f"S&P 500 {i['spx']:,.2f} is {growth} its 200-day average ({i['sma200']:,.2f}); "
+        f"5y breakeven {i['breakeven']:.2f}% (target {i['breakevenTarget']:.1f}%, as of {i['inflationAsOf']}); "
+        f"inflation signal {inflation}."
+    )
 
-    if changed_from is not None:
-        subject = f"Inflation Compass: allocation changed to {holding_label}"
-        change_line = (
-            f"This changed today -- previous holding was {_describe(changed_from['holding'], changed_from['regime'])}.\n\n"
+
+def format_daily_status_text(preview: dict) -> tuple[str, str]:
+    """preview is live_preview.build_preview()'s return value:
+    {"current": {...}, "preview": {...}, "isLive": bool, "livePrices": dict|None}."""
+    current, rec = preview["current"], preview["preview"]
+    changes = current["holding"] != rec["holding"]
+
+    subject = f"Inflation Compass daily status: holding {current['holding']}, recommended {rec['holding']}"
+    if changes:
+        subject += " (CHANGE)"
+
+    if preview["isLive"]:
+        quotes = ", ".join(f"{k}={v:,.2f}" for k, v in preview["livePrices"].items())
+        rec_line = (
+            f"Recommended allocation at today's close (live preview, decided as-of now): {_describe(rec)}\n"
+            f"  This is NOT final -- it can still change before today's ({rec['date']}) close.\n"
+            f"  Quote inputs: {quotes}"
         )
     else:
-        change_line = ""
+        rec_line = f"Recommended allocation at today's close (already final): {_describe(rec)}"
 
+    change_line = (
+        f"CHANGE: the signal moves from {current['holding']} to {rec['holding']} (takes effect next session).\n\n"
+        if changes else ""
+    )
     body = (
-        f"Hybrid (QLD/XLE), Daily variant -- current status as of {as_of}.\n\n"
-        f"Currently holding: {_describe(daily['holding'], daily['regime'])}\n"
-        f"Held since: {daily['since']}\n\n"
+        f"Hybrid (QLD/XLE), Daily variant.\n\n"
+        f"Current allocation (held today, decided at the close of {current['date']}): {_describe(current)}\n\n"
+        f"{rec_line}\n\n"
         f"{change_line}"
+        f"Signal inputs: {_signal_inputs_text(rec)}\n\n"
         "Not investment advice — see the dashboard for the full picture."
     )
     return subject, body
@@ -140,33 +148,53 @@ def _card_html(label: str, color: str, holding: str, sub_html: str, extra_html: 
 </div>"""
 
 
-def format_status_email_html(as_of: str, daily: dict, changed_from: dict | None) -> str:
-    color = HOLDING_COLOR_HEX.get(daily["holding"], "#5b6272")
+def format_daily_status_html(preview: dict) -> str:
+    current, rec = preview["current"], preview["preview"]
+    changes = current["holding"] != rec["holding"]
+
     current_card = _card_html(
-        "Current Allocation", color, daily["holding"],
-        f"{REGIME_LABELS.get(daily['regime'], daily['regime'])} &mdash; held since <b>{daily['since']}</b>",
+        "Currently Held",
+        HOLDING_COLOR_HEX.get(current["holding"], "#5b6272"),
+        current["holding"],
+        f"{REGIME_LABELS.get(current['regime'], current['regime'])} &mdash; decided at the close of {current['date']}",
     )
 
-    if changed_from is not None:
-        prev_color = HOLDING_COLOR_HEX.get(changed_from["holding"], "#5b6272")
-        prev_card = _card_html(
-            "Previous Allocation (until today)", prev_color, changed_from["holding"],
-            REGIME_LABELS.get(changed_from["regime"], changed_from["regime"]),
-        )
-        cards = prev_card + current_card
-        title = "Inflation Compass — Allocation Changed"
+    box = "margin-top:10px;padding:9px 11px;background:rgba(255,255,255,.16);border-radius:6px;font-size:11.5px;color:#ffffff;font-family:{f};line-height:1.5;".format(f=FONT_STACK)
+    if preview["isLive"]:
+        quotes = ", ".join(f"{k}={v:,.2f}" for k, v in preview["livePrices"].items())
+        rec_extra = f"""
+  <div style="{box}">
+    <b>Not final</b> &mdash; can still change before today's {rec['date']} close.<br>
+    Quote inputs: <span style="font-family:{MONO_STACK};">{quotes}</span>
+  </div>"""
+        rec_label = "Recommended at Today&rsquo;s Close &mdash; Live Preview"
+        rec_sub = f"{REGIME_LABELS.get(rec['regime'], rec['regime'])} &mdash; live intraday preview, decided as-of now"
     else:
-        cards = current_card
-        title = "Inflation Compass Daily Status"
+        rec_extra = ""
+        rec_label = "Recommended at Today&rsquo;s Close &mdash; Final"
+        rec_sub = f"{REGIME_LABELS.get(rec['regime'], rec['regime'])} &mdash; decided at the close of {rec['date']}"
+    rec_extra += f"""
+  <div style="{box}">
+    <b>Signal inputs</b><br>{_signal_inputs_text(rec)}
+  </div>"""
+    rec_card = _card_html(rec_label, HOLDING_COLOR_HEX.get(rec["holding"], "#5b6272"), rec["holding"], rec_sub, rec_extra)
+
+    change_banner = ""
+    if changes:
+        change_banner = f"""
+  <div style="margin:0 24px;padding:10px 14px;background:#fff4e5;border:1px solid #f3c98b;border-radius:8px;font-size:13px;color:#7a4a00;font-family:{FONT_STACK};">
+    <b>Change:</b> the signal moves from <b>{current['holding']}</b> to <b>{rec['holding']}</b> (takes effect next session).
+  </div>"""
 
     return f"""
 <div style="max-width:600px;margin:0 auto;font-family:{FONT_STACK};color:#171a24;background:#ffffff;">
   <div style="padding:22px 24px 16px;border-bottom:2px solid #eef0f6;">
-    <div style="font-size:19px;font-weight:700;">{title}</div>
-    <div style="font-size:12.5px;color:#5b6272;margin-top:3px;">Hybrid (QLD/XLE), Daily &middot; as of <b>{as_of}</b></div>
-  </div>
+    <div style="font-size:19px;font-weight:700;">Inflation Compass Daily Status</div>
+    <div style="font-size:12.5px;color:#5b6272;margin-top:3px;">Hybrid (QLD/XLE), Daily &middot; latest session: <b>{rec['date']}</b></div>
+  </div>{change_banner}
   <div style="padding:20px 24px 4px;">
-    {cards}
+    {current_card}
+    {rec_card}
   </div>
   <div style="padding:6px 24px 22px;font-size:12px;color:#5b6272;line-height:1.6;font-family:{FONT_STACK};">
     <b>Not investment advice</b> &mdash; see the dashboard for the full picture.
@@ -174,29 +202,17 @@ def format_status_email_html(as_of: str, daily: dict, changed_from: dict | None)
 </div>"""
 
 
-def check_and_notify(current_allocation: dict) -> None:
-    """current_allocation is refresh_chart.build_current_allocation()'s
-    return value: {"asOf": ..., "monthly": {...}, "daily": {...}}. Sends a
-    status email every time this is called (i.e. every trading day the
-    scheduled task runs) -- not just on a regime change."""
-    daily = current_allocation["daily"]
-    as_of = current_allocation["asOf"]
-    last_sent = load_last_sent()
-    changed_from = last_sent if (last_sent is not None and last_sent.get("holding") != daily.get("holding")) else None
-
+def send_daily_status(preview: dict) -> None:
     cfg = load_config()
     if cfg is None:
         print("[notify] email_config.json is missing/incomplete -- skipping daily status email")
-        save_last_sent(daily)
         return
 
-    subject, text_body = format_status_email_text(as_of, daily, changed_from)
-    html_body = format_status_email_html(as_of, daily, changed_from)
+    subject, text_body = format_daily_status_text(preview)
+    html_body = format_daily_status_html(preview)
     try:
         send_email(cfg, subject, text_body, html_body)
-        tag = "changed" if changed_from is not None else "unchanged"
-        print(f"[notify] sent daily status email ({tag}): {daily['holding']}")
+        print(f"[notify] sent daily status email: current={preview['current']['holding']} "
+              f"recommended={preview['preview']['holding']} (live={preview['isLive']})")
     except Exception as exc:
         print(f"[notify] FAILED to send email: {exc}")
-
-    save_last_sent(daily)
