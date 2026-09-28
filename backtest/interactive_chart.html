@@ -769,6 +769,22 @@ function cumulativeGrowth(returns) {
     return acc;
   });
 }
+function cumulativeGrowthRebased(returns) {
+  // Like cumulativeGrowth, but the FIRST value is always exactly the
+  // starting baseline (1.0) -- day 0's own realized return is dropped
+  // rather than compounded in immediately, since the growth/drawdown
+  // charts promise every series is rebased to the same $10,000 (0%
+  // drawdown) starting point at the selected range's left edge. Using
+  // plain cumulativeGrowth here would bake each series' own day-0 return
+  // into its very first plotted point, so different series would visibly
+  // start at different dollar amounts -- invisible over decades of
+  // history, obvious over a short window like MTD.
+  let acc = 1;
+  return returns.map((r, i) => {
+    if (i > 0 && Number.isFinite(r)) acc *= (1 + r);
+    return acc;
+  });
+}
 function runningMax(arr) {
   let peak = -Infinity;
   return arr.map(v => { peak = Math.max(peak, v); return peak; });
@@ -1402,7 +1418,7 @@ function redraw() {
   const growthData = { dates: sliced.dates };
   const ddData = { dates: sliced.dates };
   SERIES_META.forEach(s => {
-    const g = cumulativeGrowth(sliced[s.key]);
+    const g = cumulativeGrowthRebased(sliced[s.key]);
     growthData[s.key] = g.map(v => v * STARTING_AMOUNT);
     ddData[s.key] = drawdownFromGrowth(g).map(v => v * 100);
   });
