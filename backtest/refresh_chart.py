@@ -42,6 +42,12 @@ PIPELINE_STEPS = [
     ("backtest/simulate_unlevered_monthly_qqq.py", "backtest"),
     ("backtest/simulate_hybrid_qld_goldilocks_xle_reflation.py", "backtest"),
     ("backtest/simulate_hybrid_qld_goldilocks_xle_reflation_daily_signal.py", "backtest"),
+    ("transform/build_signals_enhanced.py", "transform"),
+    ("backtest/simulate_enhanced_levered_monthly.py", "backtest"),
+    ("backtest/simulate_enhanced_levered_daily_signal.py", "backtest"),
+    ("backtest/simulate_enhanced_unlevered_monthly_qqq.py", "backtest"),
+    ("backtest/simulate_enhanced_hybrid_qld_xle.py", "backtest"),
+    ("backtest/simulate_enhanced_hybrid_qld_xle_daily_signal.py", "backtest"),
 ]
 
 REGIME_MAP = {
@@ -100,8 +106,66 @@ def build_daily_blob() -> dict:
     }
 
 
+def build_daily_blob_enhanced() -> dict:
+    levered = load_series("enhanced_levered_tqqq_erx_monthly_returns.csv")
+    levered_daily = load_series("enhanced_levered_tqqq_erx_daily_signal_returns.csv")
+    unlevered = load_series("enhanced_unlevered_monthly_qqq_returns.csv")
+    hybrid_qld_xle = load_series("enhanced_hybrid_qld_goldilocks_xle_reflation_returns.csv")
+    hybrid_qld_xle_daily = load_series("enhanced_hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
+
+    dates = sorted(
+        set(levered.index) & set(levered_daily.index) & set(unlevered.index)
+        & set(hybrid_qld_xle.index) & set(hybrid_qld_xle_daily.index)
+    )
+    date_strs = [d.strftime("%Y-%m-%d") for d in dates]
+
+    return {
+        "dates": date_strs,
+        "levered": [round(float(levered.loc[d, "model_return"]), 4) for d in dates],
+        "unlevered": [round(float(unlevered.loc[d, "model_return"]), 4) for d in dates],
+        "spy": [round(float(unlevered.loc[d, "spy_return"]), 4) for d in dates],
+        "levered_daily": [round(float(levered_daily.loc[d, "model_return"]), 4) for d in dates],
+        "hybrid_qld_xle": [round(float(hybrid_qld_xle.loc[d, "model_return"]), 4) for d in dates],
+        "hybrid_qld_xle_daily": [round(float(hybrid_qld_xle_daily.loc[d, "model_return"]), 4) for d in dates],
+    }
+
+
 def build_monthly_table() -> dict:
     df = load_series("unlevered_monthly_qqq_returns.csv")
+    df["period"] = df.index.to_period("M")
+    holding_by_month = df.groupby("period")["traded_holding"].agg(lambda s: s.value_counts().idxmax())
+    monthly = (1 + df["model_return"]).resample("ME").prod() - 1
+    monthly.index = monthly.index.to_period("M")
+
+    years = sorted(set(p.year for p in monthly.index))
+    rows = []
+    for y in years:
+        month_vals, month_regimes, year_vals = [], [], []
+        for m in range(1, 13):
+            key = pd.Period(year=y, month=m, freq="M")
+            if key in monthly.index:
+                v = float(monthly.loc[key])
+                month_vals.append(round(v * 100, 2))
+                month_regimes.append(REGIME_MAP[holding_by_month.loc[key]])
+                year_vals.append(v)
+            else:
+                month_vals.append(None)
+                month_regimes.append(None)
+        if year_vals:
+            total = 1.0
+            for v in year_vals:
+                total *= 1 + v
+            total_pct = round((total - 1) * 100, 2)
+        else:
+            total_pct = None
+        rows.append({"year": y, "m": month_vals, "r": month_regimes, "total": total_pct})
+
+    last_date = df.index.max().strftime("%Y-%m-%d")
+    return {"rows": rows, "lastUpdate": last_date}
+
+
+def build_monthly_table_enhanced() -> dict:
+    df = load_series("enhanced_unlevered_monthly_qqq_returns.csv")
     df["period"] = df.index.to_period("M")
     holding_by_month = df.groupby("period")["traded_holding"].agg(lambda s: s.value_counts().idxmax())
     monthly = (1 + df["model_return"]).resample("ME").prod() - 1
@@ -145,6 +209,18 @@ TRADED_REGIME_MAP = {
 def build_current_allocation() -> dict:
     monthly = load_series("hybrid_qld_goldilocks_xle_reflation_returns.csv")
     daily = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
+    monthly_holding = monthly["traded_holding"].iloc[-1]
+    daily_holding = daily["traded_holding"].iloc[-1]
+    return {
+        "asOf": max(monthly.index.max(), daily.index.max()).strftime("%Y-%m-%d"),
+        "monthly": {"holding": monthly_holding, "regime": TRADED_REGIME_MAP[monthly_holding]},
+        "daily": {"holding": daily_holding, "regime": TRADED_REGIME_MAP[daily_holding]},
+    }
+
+
+def build_current_allocation_enhanced() -> dict:
+    monthly = load_series("enhanced_hybrid_qld_goldilocks_xle_reflation_returns.csv")
+    daily = load_series("enhanced_hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
     monthly_holding = monthly["traded_holding"].iloc[-1]
     daily_holding = daily["traded_holding"].iloc[-1]
     return {
@@ -225,8 +301,78 @@ def build_daily_calendar_table() -> dict:
     return {"runs": runs, "rows": rows, "lastUpdate": last_date}
 
 
+def build_daily_calendar_table_enhanced() -> dict:
+    """Same run-length-encoding as build_daily_calendar_table(), for the
+    Enhanced Hybrid, Daily variant."""
+    df = load_series("enhanced_hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
+    df["run_id"] = (df["traded_holding"] != df["traded_holding"].shift()).cumsum()
+
+    runs = []
+    run_id_to_idx = {}
+    for i, (run_id, grp) in enumerate(df.groupby("run_id")):
+        holding = grp["traded_holding"].iloc[0]
+        total = 1.0
+        for v in grp["model_return"]:
+            total *= 1 + v
+        runs.append({
+            "start": grp.index.min().strftime("%Y-%m-%d"),
+            "end": grp.index.max().strftime("%Y-%m-%d"),
+            "holding": holding,
+            "regime": TRADED_REGIME_CODE[holding],
+            "returnPct": round((total - 1) * 100, 2),
+        })
+        run_id_to_idx[run_id] = i
+
+    trading_run_idx = df["run_id"].map(run_id_to_idx)
+    full_range = pd.date_range(df.index.min(), df.index.max(), freq="D")
+    run_idx_by_calendar_day = trading_run_idx.reindex(full_range).ffill()
+
+    years = sorted(set(full_range.year))
+    rows = []
+    for y in years:
+        year_dates = full_range[full_range.year == y]
+        year_idx = run_idx_by_calendar_day.reindex(year_dates)
+        day_map = {
+            canonical_doy(d.month, d.day): int(idx)
+            for d, idx in zip(year_dates, year_idx) if pd.notna(idx)
+        }
+        days = [day_map.get(d) for d in range(1, 367)]
+
+        year_returns = df.loc[df.index.year == y, "model_return"].values
+        if len(year_returns):
+            total = 1.0
+            for v in year_returns:
+                total *= 1 + v
+            total_pct = round((total - 1) * 100, 2)
+        else:
+            total_pct = None
+        rows.append({"year": int(y), "days": days, "total": total_pct})
+
+    last_date = df.index.max().strftime("%Y-%m-%d")
+    return {"runs": runs, "rows": rows, "lastUpdate": last_date}
+
+
 def build_regime_summary() -> dict:
     df = load_series("unlevered_monthly_qqq_returns.csv")
+    df["period"] = df.index.to_period("M")
+    holding_by_month = df.groupby("period")["traded_holding"].agg(lambda s: s.value_counts().idxmax())
+    monthly = (1 + df["model_return"]).resample("ME").prod() - 1
+    monthly.index = monthly.index.to_period("M")
+    regime_of_month = holding_by_month.map(REGIME_MAP)
+
+    months_count = regime_of_month.value_counts()
+    time_share = (months_count / months_count.sum() * 100).round(1).to_dict()
+
+    log_ret = np.log(1 + monthly)
+    by_regime_logret = log_ret.groupby(regime_of_month).sum()
+    total_logret = log_ret.sum()
+    return_share = (by_regime_logret / total_logret * 100).round(1).to_dict()
+
+    return {"time": time_share, "returnShare": return_share}
+
+
+def build_regime_summary_enhanced() -> dict:
+    df = load_series("enhanced_unlevered_monthly_qqq_returns.csv")
     df["period"] = df.index.to_period("M")
     holding_by_month = df.groupby("period")["traded_holding"].agg(lambda s: s.value_counts().idxmax())
     monthly = (1 + df["model_return"]).resample("ME").prod() - 1
@@ -258,7 +404,9 @@ def replace_const(text: str, const_name: str, payload: dict) -> str:
 
 
 def patch_chart(
-    daily: dict, monthly_table: dict, regime_summary: dict, current_allocation: dict, daily_calendar: dict
+    daily: dict, monthly_table: dict, regime_summary: dict, current_allocation: dict, daily_calendar: dict,
+    daily_enhanced: dict, monthly_table_enhanced: dict, regime_summary_enhanced: dict,
+    current_allocation_enhanced: dict, daily_calendar_enhanced: dict,
 ) -> None:
     text = CHART_PATH.read_text(encoding="utf-8")
     text = replace_const(text, "MONTHLY_TABLE_QQQ", monthly_table)
@@ -266,6 +414,11 @@ def patch_chart(
     text = replace_const(text, "REGIME_SUMMARY", regime_summary)
     text = replace_const(text, "CURRENT_ALLOCATION", current_allocation)
     text = replace_const(text, "DAILY_CALENDAR_QLD_XLE", daily_calendar)
+    text = replace_const(text, "MONTHLY_TABLE_QQQ_ENHANCED", monthly_table_enhanced)
+    text = replace_const(text, "DAILY_ENHANCED", daily_enhanced)
+    text = replace_const(text, "REGIME_SUMMARY_ENHANCED", regime_summary_enhanced)
+    text = replace_const(text, "CURRENT_ALLOCATION_ENHANCED", current_allocation_enhanced)
+    text = replace_const(text, "DAILY_CALENDAR_QLD_XLE_ENHANCED", daily_calendar_enhanced)
     CHART_PATH.write_text(text, encoding="utf-8")
 
 
@@ -278,7 +431,17 @@ def main() -> None:
     current_allocation = build_current_allocation()
     daily_calendar = build_daily_calendar_table()
 
-    patch_chart(daily, monthly_table, regime_summary, current_allocation, daily_calendar)
+    daily_enhanced = build_daily_blob_enhanced()
+    monthly_table_enhanced = build_monthly_table_enhanced()
+    regime_summary_enhanced = build_regime_summary_enhanced()
+    current_allocation_enhanced = build_current_allocation_enhanced()
+    daily_calendar_enhanced = build_daily_calendar_table_enhanced()
+
+    patch_chart(
+        daily, monthly_table, regime_summary, current_allocation, daily_calendar,
+        daily_enhanced, monthly_table_enhanced, regime_summary_enhanced,
+        current_allocation_enhanced, daily_calendar_enhanced,
+    )
 
     print()
     print(f"[refresh] chart data through {daily['dates'][-1]} patched into {CHART_PATH}")
