@@ -640,6 +640,7 @@
       <button type="button" class="quick-range-btn" data-range="1Y">1Y</button>
       <button type="button" class="quick-range-btn" data-range="3Y">3Y</button>
       <button type="button" class="quick-range-btn" data-range="5Y">5Y</button>
+      <button type="button" class="quick-range-btn" data-range="2003" title="Jump to the Enhanced dataset's real-data start date, for comparing Original and Enhanced from the same point">Since 2003</button>
     </div>
     <button class="filter-reset" id="resetRange">Reset to full history</button>
     <span class="filter-range-label" id="rangeLabel"></span>
@@ -1439,6 +1440,11 @@ const QUICK_RANGES = {
   "1Y": () => isoAddMonths(fullEnd, -12),
   "3Y": () => isoAddMonths(fullEnd, -36),
   "5Y": () => isoAddMonths(fullEnd, -60),
+  // Enhanced's own real-data start (no proxy/splice), so clicking this on
+  // either dashboard lines both up at the same starting point -- reads
+  // dynamically off the dataset itself rather than a hardcoded guess, so
+  // it stays correct as the data refreshes.
+  "2003": () => DATASETS.enhanced.daily.dates[0],
 };
 const quickRangeButtons = Array.from(document.querySelectorAll(".quick-range-btn"));
 
