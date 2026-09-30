@@ -231,3 +231,30 @@ and Fama-French industry proxies in place of real T5YIE/SPDR data; the
 pre-2010 levered segments use synthetic daily-compounded leverage with no
 fund fees or financing cost; none of this reflects real trading costs,
 taxes, or slippage. Not investment advice.
+
+## Robustness tests
+
+`robustness/` stress-tests the Hybrid QLD/XLE daily variant beyond its own
+backtest:
+
+```
+.venv/Scripts/python.exe robustness/run_tests.py      # ~6s, writes robustness/results.json
+.venv/Scripts/python.exe robustness/build_report.py   # writes robustness/report.html
+```
+
+1. Out of sample (1990-2002, before the published 2003+ backtest), other
+   goldilocks holdings (QQQ/SPY/XLK), and all 24 regime-to-holding
+   assignments
+2. Parameter robustness: one-at-a-time sweeps plus 300 random joint nudges
+3. Execution stress: costs, a day of delay, inflation data 1-2 days late, a
+   costed pre-2006 QLD stand-in, and the live 2:30 PM CT decision from
+   60-minute bars
+4. Walk-forward re-selection of settings each year from past data only
+5. Block-bootstrap synthetic histories (2002 on)
+
+`robustness/engine.py` reproduces the backtest exactly with the published
+settings (checked by `engine.validate()`). The report shares its styling
+with `../max-alpha-backtest/robustness/report_template.html`. The prose
+findings in `build_report.py` were written for the 2026-09-30 run; reread
+them after rerunning. Published at
+https://claude.ai/artifact/Je2EKmP8snc3RwUKPg6cS7.
