@@ -42,6 +42,7 @@ PIPELINE_STEPS = [
     ("backtest/simulate_unlevered_monthly_qqq.py", "backtest"),
     ("backtest/simulate_hybrid_qld_goldilocks_xle_reflation.py", "backtest"),
     ("backtest/simulate_hybrid_qld_goldilocks_xle_reflation_daily_signal.py", "backtest"),
+    ("backtest/simulate_hybrid_qld_goldilocks_xle_reflation_daily_signal_confirm2.py", "backtest"),
     ("transform/build_signals_enhanced.py", "transform"),
     ("backtest/simulate_enhanced_levered_monthly.py", "backtest"),
     ("backtest/simulate_enhanced_levered_daily_signal.py", "backtest"),
@@ -88,10 +89,11 @@ def build_daily_blob() -> dict:
     unlevered = load_series("unlevered_monthly_qqq_returns.csv")
     hybrid_qld_xle = load_series("hybrid_qld_goldilocks_xle_reflation_returns.csv")
     hybrid_qld_xle_daily = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
+    hybrid_confirm2 = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_confirm2_returns.csv")
 
     dates = sorted(
         set(levered.index) & set(levered_daily.index) & set(unlevered.index)
-        & set(hybrid_qld_xle.index) & set(hybrid_qld_xle_daily.index)
+        & set(hybrid_qld_xle.index) & set(hybrid_qld_xle_daily.index) & set(hybrid_confirm2.index)
     )
     date_strs = [d.strftime("%Y-%m-%d") for d in dates]
 
@@ -103,6 +105,9 @@ def build_daily_blob() -> dict:
         "levered_daily": [round(float(levered_daily.loc[d, "model_return"]), 4) for d in dates],
         "hybrid_qld_xle": [round(float(hybrid_qld_xle.loc[d, "model_return"]), 4) for d in dates],
         "hybrid_qld_xle_daily": [round(float(hybrid_qld_xle_daily.loc[d, "model_return"]), 4) for d in dates],
+        # Tested variant (2-day regime confirmation), Original mode only -- see
+        # simulate_hybrid_qld_goldilocks_xle_reflation_daily_signal_confirm2.py.
+        "hybrid_qld_xle_daily_c2": [round(float(hybrid_confirm2.loc[d, "model_return"]), 4) for d in dates],
     }
 
 
