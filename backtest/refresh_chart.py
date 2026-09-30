@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import live_tracking
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BACKTEST_DIR = PROJECT_ROOT / "backtest"
 CHART_PATH = BACKTEST_DIR / "interactive_chart.html"
@@ -408,6 +410,15 @@ def replace_const(text: str, const_name: str, payload: dict) -> str:
     return text[:json_start] + new_json + text[end:]
 
 
+def build_live_tracking() -> dict:
+    """Live-vs-backtest bands for the rules actually traded (Original signals):
+    Hybrid Daily, its 2-day confirmation variant, and the S&P 500."""
+    daily = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
+    confirm2 = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_confirm2_returns.csv")
+    return live_tracking.build({"hybrid_daily": daily["model_return"], "hybrid_daily_c2": confirm2["model_return"],
+                                "spy": daily["spy_return"]})
+
+
 def patch_chart(
     daily: dict, monthly_table: dict, regime_summary: dict, current_allocation: dict, daily_calendar: dict,
     daily_enhanced: dict, monthly_table_enhanced: dict, regime_summary_enhanced: dict,
@@ -424,6 +435,7 @@ def patch_chart(
     text = replace_const(text, "REGIME_SUMMARY_ENHANCED", regime_summary_enhanced)
     text = replace_const(text, "CURRENT_ALLOCATION_ENHANCED", current_allocation_enhanced)
     text = replace_const(text, "DAILY_CALENDAR_QLD_XLE_ENHANCED", daily_calendar_enhanced)
+    text = replace_const(text, "LIVE_TRACKING", build_live_tracking())
     CHART_PATH.write_text(text, encoding="utf-8")
 
 
