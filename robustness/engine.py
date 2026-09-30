@@ -51,6 +51,22 @@ class Params:
 PUBLISHED = Params()
 
 
+def confirm(raw: np.ndarray, k: int) -> np.ndarray:
+    """Persistence filter: the output only changes to a new value once the raw
+    series has shown that value on k consecutive days (k=1: unchanged)."""
+    if k <= 1:
+        return raw.copy()
+    out = raw.copy()
+    cur = raw[0]
+    run = 1
+    for i in range(1, len(raw)):
+        run = run + 1 if raw[i] == raw[i - 1] else 1
+        if raw[i] != cur and run >= k:
+            cur = raw[i]
+        out[i] = cur
+    return out
+
+
 def fast_slope(y: np.ndarray, w: int) -> np.ndarray:
     """Same least-squares slope as BSE.rolling_slope, via one convolution."""
     x = np.arange(w) - (w - 1) / 2
@@ -108,7 +124,12 @@ class Inputs:
         out[~m] = ex_up.to_numpy()[~m].astype(bool)
         return out
 
-    def regimes(self, p: Params = PUBLISHED, infl_lag: int = 0, spx=None, ratio=None, level=None) -> np.ndarray:
+    def regimes(self, p: Params = PUBLISHED, infl_lag: int = 0, spx=None, ratio=None, level=None,
+                infl_confirm: int = 1, regime_confirm: int = 1, parts: bool = False):
+        """Regime code per day (-1 during warmup). infl_confirm=k: the inflation
+        signal must hold for k consecutive days before a change is acted on;
+        regime_confirm=k: the same for the whole regime. parts=True also
+        returns (growth, raw inflation_on) for callers that need them."""
         spx = self.spx if spx is None else spx
         ratio = self.ratio if ratio is None else ratio
         level = self.level if level is None else level
@@ -120,10 +141,14 @@ class Inputs:
             above = np.concatenate([np.zeros(infl_lag, bool), above[:-infl_lag]])
             mom_up = np.concatenate([np.zeros(infl_lag, bool), mom_up[:-infl_lag]])
         basket_up = fast_slope(ratio, p.basket) > 0
-        infl_on = above & (mom_up | basket_up)
+        infl_raw = above & (mom_up | basket_up)
+        infl_on = confirm(infl_raw, infl_confirm)
         code = np.where(growth, np.where(infl_on, 0, 1), np.where(infl_on, 2, 3)).astype(np.int8)
         code[np.isnan(sma)] = -1
-        return code
+        if regime_confirm > 1:
+            valid = code >= 0
+            code[valid] = confirm(code[valid], regime_confirm)
+        return (code, growth, infl_raw, infl_on) if parts else code
 
     # ------------------------------------------------------------ returns
     def leg_matrix(self, mapping=PUBLISHED_MAP, qld_cost: bool = False) -> np.ndarray:

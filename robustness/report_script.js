@@ -148,5 +148,29 @@ function section(id, n, title, finding, body, note){
   section('t5', 5, 'Synthetic histories', TEXT.t5, body, TEXT.t5_note);
 })();
 
+// ---- test 6: confirmation rule
+(function(){
+  const C = R.confirm, G = R.confirm_regime;
+  const v = C.variants;
+  const row = (x, hl) => `<tr${hl ? ' class="hl"' : ''}><td>${x.label}</td><td>${x.trades_per_year.toFixed(1)}</td><td>${pct(x.short_holds,0)}</td>
+    <td>${pct(x.by_cost[0].full.cagr)}</td><td>${pct(x.by_cost[10].full.cagr)}</td><td>${pct(x.by_cost[25].full.cagr)}</td>
+    <td class="neg">${pct(x.by_cost[0].full.mdd,0)}</td><td>${pct(x.by_cost[0].oos.cagr)}</td><td>${pct(x.by_cost[0].in.cagr)}</td></tr>`;
+  const main = `<div class="table-scroll"><table><thead><tr class="group"><th></th><th colspan="2">Trading</th><th colspan="3">CAGR 1990–2026, by cost per trade</th><th></th><th colspan="2">CAGR, no costs</th></tr>
+    <tr><th>Rule</th><th>Trades/yr</th><th>Holds ≤3 days</th><th>0 bps</th><th>10 bps</th><th>25 bps</th><th>Max DD</th><th>1990–2002</th><th>2003–2026</th></tr></thead>
+    <tbody>${row(v[0], false)}${row(v[1], false)}${row(v[2], true)}</tbody></table></div>`;
+  const ks = G.k_sweep.map(k => `<tr${k.k===2?' class="hl"':''}><td>${k.k === 1 ? '1 (published)' : k.k}</td><td>${k.trades_per_year.toFixed(1)}</td><td>${pct(k[0].full.cagr)}</td><td>${pct(k[10].full.cagr)}</td><td>${pct(k[25].full.cagr)}</td><td class="neg">${pct(k[0].full.mdd,0)}</td></tr>`).join('');
+  const sweep = `<h3 style="font-size:13px;margin:18px 0 4px">Days the regime must hold before switching</h3>
+    <div class="table-scroll"><table><thead><tr><th>Days</th><th>Trades/yr</th><th>CAGR, 0 bps</th><th>10 bps</th><th>25 bps</th><th>Max DD</th></tr></thead><tbody>${ks}</tbody></table></div>`;
+  const r0 = G.random[0], r10 = G.random[10], b = G.bootstrap, l1 = G.intraday[1], l2 = G.intraday[2];
+  const checks = `<h3 style="font-size:13px;margin:18px 0 4px">Checks on the whole-regime 2-day rule</h3>
+    <div class="stat-row">
+      <div class="stat"><div class="k">Live 2:30 PM decision, 10 bps</div><div class="v">${pct(l2.live_10bps.cagr)}</div><div class="d">vs ${pct(l1.live_10bps.cagr)} published rule, since ${l2.from}</div></div>
+      <div class="stat"><div class="k">300 nearby settings, 10 bps</div><div class="v">${pct(r10.full.share_improved,0)}</div><div class="d">improved (median ${(r10.full.median_gain*100).toFixed(1)} pts/yr); with no costs ${pct(r0.full.share_improved,0)}</div></div>
+      <div class="stat"><div class="k">300 synthetic histories, 10 bps</div><div class="v">${pct(b.cagr.share_improved,0)}</div><div class="d">higher CAGR; shallower max DD in ${pct(b.mdd.share_improved,0)}</div></div>
+      <div class="stat"><div class="k">1990–2002, nearby settings, no costs</div><div class="v">${pct(r0.oos.share_improved,0)}</div><div class="d">improved (median ${(r0.oos.median_gain*100).toFixed(1)} pts/yr)</div></div>
+    </div>`;
+  section('t6', 6, 'Tested fix: two-day confirmation', TEXT.t6, main + sweep + checks, TEXT.t6_note);
+})();
+
 document.getElementById('method').innerHTML = TEXT.method;
 document.getElementById('footer').textContent = `Data through ${R.as_of}. Engine reproduces the Inflation Compass backtest exactly (${(R.validation.regime_agreement*100).toFixed(1)}% of regimes match; daily returns identical).`;

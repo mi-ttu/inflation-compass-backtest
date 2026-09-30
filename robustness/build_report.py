@@ -1,6 +1,7 @@
 """Render robustness/results.json into robustness/report.html.
 
-Styling (CSS, header, theme toggle) is shared with the MaxAlpha robustness
+Also reads results_confirm.json / results_confirm_regime.json
+(confirm_test.py, confirm_regime_test.py) for section 6. Styling (CSS, header, theme toggle) is shared with the MaxAlpha robustness
 report: taken from ../max-alpha-backtest/robustness/report_template.html up to
 its <script> tag. The findings text below was written for the run dated in
 results.json; reread it after rerunning run_tests.py on new data.
@@ -85,6 +86,20 @@ TEXT = {
         "Shuffling keeps trends shorter than 6 months but breaks longer ones, and joins inflation-expectation levels from "
         "different periods at block edges, which can briefly flip the inflation signal."
     ),
+    "t6": (
+        "Two versions of a confirmation rule were tested. Requiring only the inflation signal to hold two days barely "
+        "changed anything: trading fell just 10% and results were mixed. Requiring the whole regime to hold two closes "
+        "before switching cut trading from about 11 to 7 times a year, cut 1–3-day holds from 44% to 19%, and reduced the "
+        "worst drawdown from −46% to −42%. With no trading costs its return is about the same; its gain is saved costs, "
+        "about 1.3 points a year at 10 basis points per trade and 3 points at 25. It held up in the live-like 2:30 PM "
+        "version, across 300 nearby settings and in 80% of synthetic histories, and 2 to 5 days all work similarly."
+    ),
+    "t6_note": (
+        "Weak spots: with no trading costs, it helps only about half of the nearby settings, and over 1990–2002 it is "
+        "slightly worse for most of them, because waiting a day also delays genuine regime changes. It is a change to "
+        "Varadi's published rules, found after looking at this data, so treat it as a sensible cost control rather than "
+        "a proven improvement. The live-trading figures cover only about three years."
+    ),
     "method": (
         "All tests use one simulation engine built on the Inflation Compass project's own signal code, with every setting "
         "adjustable. With the published settings it reproduces the backtest's regimes on 100% of days and its daily returns "
@@ -96,12 +111,15 @@ TEXT = {
 
 def main():
     res = json.loads((HERE / "results.json").read_text())
+    res["confirm"] = json.loads((HERE / "results_confirm.json").read_text())
+    res["confirm_regime"] = json.loads((HERE / "results_confirm_regime.json").read_text())
     shell = SHELL.read_text(encoding="utf-8")
     head = shell[: shell.index("<script>")]
     head = head.replace("<title>MaxAlpha Robustness</title>", "<title>Inflation Compass Robustness</title>")
     head = head.replace("<h1>MaxAlpha Robustness</h1>", "<h1>Inflation Compass Robustness</h1>")
     head = head.replace("Five tests of whether MaxAlpha's backtested edge survives outside the exact data, settings and trading assumptions it was built on.",
                         "Five tests of whether the Inflation Compass Hybrid QLD/XLE daily strategy holds up outside the exact data, settings and trading assumptions it was built on.")
+    head = head.replace('<div class="card" id="t5"></div>', '<div class="card" id="t5"></div>\n  <div class="card" id="t6"></div>')
     head = head.replace("</style>", ".axis-small{fill:var(--muted-2);font-family:var(--font-mono);font-size:8.5px}\n</style>")
     theme = shell[shell.index("<script>"): shell.index("const R = __RESULTS_JSON__;")].replace("maxalpha_robust_theme", "ic_robust_theme")
     script = (HERE / "report_script.js").read_text(encoding="utf-8")

@@ -251,6 +251,10 @@ backtest:
    60-minute bars
 4. Walk-forward re-selection of settings each year from past data only
 5. Block-bootstrap synthetic histories (2002 on)
+6. A two-day confirmation rule (`confirm_test.py`, `confirm_regime_test.py`):
+   requiring the whole regime to hold two closes before switching cuts
+   trading from ~11 to ~7 times a year and helps once trading costs are
+   included; requiring only the inflation signal to hold barely helps
 
 `robustness/engine.py` reproduces the backtest exactly with the published
 settings (checked by `engine.validate()`). The report shares its styling
