@@ -100,6 +100,15 @@ TEXT = {
         "Varadi's published rules, found after looking at this data, so treat it as a sensible cost control rather than "
         "a proven improvement. The live-trading figures cover only about three years."
     ),
+    "regimes_num": "7",
+    "regimes_title": "Rising real yields: Inflation Compass vs MaxAlpha",
+    "regimes": (
+        "Split by what stocks did while real yields rose (periods where MaxAlpha's TIP signal was off for 60+ days), "
+        "Inflation Compass and MaxAlpha are mirror images. In rising-yield rallies IC stayed invested, in QLD through 2013 and "
+        "mostly XLE in 2023, and gained 94% compounded against 23% for the S&amp;P 500 and -12% for MaxAlpha. In rising-yield "
+        "sell-offs IC never goes to cash or short, so it lost 41% compounded, worse than the S&amp;P's -32%, mostly from holding "
+        "QLD into late 2018 (-34%); MaxAlpha made +534% on the same days. The 2-day variant doesn't change this pattern."
+    ),
     "method": (
         "All tests use one simulation engine built on the Inflation Compass project's own signal code, with every setting "
         "adjustable. With the published settings it reproduces the backtest's regimes on 100% of days and its daily returns "
@@ -123,7 +132,11 @@ def main():
     head = head.replace("</style>", ".axis-small{fill:var(--muted-2);font-family:var(--font-mono);font-size:8.5px}\n</style>")
     theme = shell[shell.index("<script>"): shell.index("const R = __RESULTS_JSON__;")].replace("maxalpha_robust_theme", "ic_robust_theme")
     script = (HERE / "report_script.js").read_text(encoding="utf-8")
-    html = head + theme + script.replace("__RESULTS_JSON__", json.dumps(res, separators=(",", ":"))).replace("__TEXT_JSON__", json.dumps(TEXT)) + "\n</script>\n"
+    unified = SHELL.parent.parent.parent / "unified-portfolio-dashboard" / "analysis"
+    regimes = (unified / "real_yield_regimes.json").read_text(encoding="utf-8") if (unified / "real_yield_regimes.json").exists() else "null"
+    script = script.replace("__RESULTS_JSON__", json.dumps(res, separators=(",", ":"))).replace("__TEXT_JSON__", json.dumps(TEXT))
+    script = script.replace("const TEXT = ", "const REGIMES = " + regimes + ";\n" + (unified / "regimes_render.js").read_text(encoding="utf-8") + "\nconst TEXT = ", 1)
+    html = head + theme + script + "\n</script>\n"
     (HERE / "report.html").write_text(html, encoding="utf-8")
     print("wrote robustness/report.html")
 

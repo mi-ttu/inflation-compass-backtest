@@ -172,5 +172,9 @@ function section(id, n, title, finding, body, note){
   section('t6', 6, 'Tested fix: two-day confirmation', TEXT.t6, main + sweep + checks, TEXT.t6_note);
 })();
 
+if (REGIMES && TEXT.regimes){
+  const el = document.getElementById('regimes'); el.hidden = false;
+  el.innerHTML = `<h2><span class="num">${TEXT.regimes_num}</span>${TEXT.regimes_title}</h2><div class="finding">${TEXT.regimes}</div>` + regimeTables(REGIMES, 'note');
+}
 document.getElementById('method').innerHTML = TEXT.method;
 document.getElementById('footer').textContent = `Data through ${R.as_of}. Engine reproduces the Inflation Compass backtest exactly (${(R.validation.regime_agreement*100).toFixed(1)}% of regimes match; daily returns identical).`;
