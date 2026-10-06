@@ -131,6 +131,20 @@ def load_inflation_spliced(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         [SPLICE_DATE.date()],
     ).df()
     t5yie["trading_date"] = pd.to_datetime(t5yie["trading_date"])
+    # FRED publishes T5YIE a day late, so on any refresh the newest market day(s)
+    # have no value yet. Carry the latest published value forward to the latest
+    # ^GSPC day -- exactly what the live bot does (backtest/live_preview.py) --
+    # so the signal, and every dashboard built on it, isn't held a day behind.
+    # The next refresh replaces these rows with FRED's real values.
+    last_mkt = con.execute("SELECT MAX(trading_date) FROM equity_prices WHERE ticker = '^GSPC'").fetchone()[0]
+    missing = con.execute(
+        "SELECT trading_date FROM trading_calendar WHERE trading_date > ? AND trading_date <= ? ORDER BY 1",
+        [t5yie["trading_date"].max().date(), last_mkt],
+    ).df()
+    if len(missing):
+        missing["trading_date"] = pd.to_datetime(missing["trading_date"])
+        missing["value"] = t5yie["value"].iloc[-1]
+        t5yie = pd.concat([t5yie, missing], ignore_index=True)
     t5yie["value_lookback"] = t5yie["value"].shift(MOMENTUM_WINDOW_DAYS)
     t5yie["inflation_signal_source"] = "T5YIE"
 
