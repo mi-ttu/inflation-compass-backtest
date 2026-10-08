@@ -151,6 +151,34 @@ enable it:
    and fill in your Gmail address, the app password, and where you want
    the alert sent. This file is git-ignored — it never gets committed.
 
+## 3:15 PM final-close check
+
+The 2:30 PM run decides on delayed intraday quotes that can still move before
+the close. A second scheduled task, `InflationCompassFinalCheck` (Mon-Fri
+3:15 PM Central = 4:15 PM Eastern, 15 minutes after the close), reruns the
+signal on the day's real closing prices (`backtest/run_final_check.py`) and
+**emails only if the recommended allocation differs from the one the 2:30 PM
+run saved** (`data/last_status.json`, local state). If it matches, nothing is
+sent and the log says so. The alert shows both allocations, which signals
+flipped (growth / inflation) and how the S&P 500 moved between the two runs.
+If no 2:30 PM baseline exists for the day (that run failed or didn't happen)
+it sends the final allocation anyway, flagged as such.
+
+Yahoo's daily bars can lag the close by a few minutes, so before refreshing it
+polls ^GSPC and the seven sector ETFs once a minute until all are dated today
+and unchanged across two polls, for up to 15 minutes. If they never settle it
+runs on what it has and the email says the closing prices may still move. It
+refuses to run before 4 PM Eastern. Its output goes to
+`backtest/refresh_logs/final_*.log`. The same dashboard refresh runs at 3:15,
+so the dashboard ends the day on final closes.
+
+The 5-year breakeven (T5YIE) is published by FRED with a lag, so the final-close
+check still uses its latest published value, same as the 2:30 PM run.
+
+To recreate the task on another machine, register `run_refresh.ps1` with
+`-TaskScript run_final_check.py -LogPrefix final` on a Mon-Fri 3:15 PM trigger
+(see `installer/install.ps1` for the standalone install's equivalent).
+
 ## Standalone install (no Python required)
 
 For a machine you don't want to set up a dev environment on: no Python, no

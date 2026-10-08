@@ -38,6 +38,10 @@ $TaskName = "InflationCompassDailyRefresh"
 # MaxAlpha backtest project's schedule. On this machine's Central Time
 # config that's 2:30 PM CST/CDT.
 $DailyTime = "2:30PM"
+# 3:15 PM local = 4:15 PM Eastern, 15 min after the close, when the day's
+# closing prices are published.
+$FinalTaskName = "InflationCompassFinalCheck"
+$FinalTime = "3:15PM"
 
 $SourceApp = Join-Path $PSScriptRoot "app"
 if (-not (Test-Path $SourceApp)) {
@@ -114,7 +118,23 @@ if ($existing) {
     Set-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings | Out-Null
 } else {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Limited -Description "Inflation Compass backtest: refresh + allocation-change email, trading days at 2:30 PM" | Out-Null
+        -RunLevel Limited -Description "Inflation Compass backtest: refresh + daily status email, trading days at 2:30 PM" | Out-Null
+}
+
+# 3:15 PM final-close check (4:15 PM Eastern, 15 min after the close): reruns
+# the signal on the day's real closing prices and emails ONLY if the
+# recommended allocation differs from the 2:30 PM run's.
+Write-Host "Registering final-close check task (Mon-Fri, $FinalTime) ..."
+$finalAction = New-ScheduledTaskAction -Execute $PythonExe -Argument "`"$(Join-Path $DestApp 'backtest\run_final_check.py')`"" -WorkingDirectory $DestApp
+$finalTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $FinalTime
+# 40 minutes: it can wait up to 15 for Yahoo's closing bars before the refresh.
+$finalSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 40) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+if (Get-ScheduledTask -TaskName $FinalTaskName -ErrorAction SilentlyContinue) {
+    Set-ScheduledTask -TaskName $FinalTaskName -Action $finalAction -Trigger $finalTrigger -Settings $finalSettings | Out-Null
+} else {
+    Register-ScheduledTask -TaskName $FinalTaskName -Action $finalAction -Trigger $finalTrigger -Settings $finalSettings `
+        -RunLevel Limited -Description "Inflation Compass backtest: 3:15 PM final-close check, emails only if the allocation changed since the 2:30 PM run" | Out-Null
 }
 
 # ---- 6. Desktop shortcut ----
@@ -131,3 +151,4 @@ Write-Host "Done." -ForegroundColor Green
 Write-Host "Dashboard: $chartPath"
 Write-Host "Desktop shortcut created."
 Write-Host "Refresh scheduled Mon-Fri at $DailyTime, local time (task: $TaskName)."
+Write-Host "Final-close check scheduled Mon-Fri at $FinalTime (task: $FinalTaskName)."

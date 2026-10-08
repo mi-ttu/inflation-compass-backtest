@@ -5,7 +5,9 @@ refresh. Either way, ends with an up-to-date interactive_chart.html, then
 sends a daily status email reporting the Hybrid (QLD/XLE), Daily variant's
 current allocation and the allocation recommended at today's close (see
 live_preview.py) -- every trading day this runs, not just on a change
-(see notify.py -- silently skipped if email isn't configured).
+(see notify.py -- silently skipped if email isn't configured). The
+decision is also saved (status_store.py) for the 3:15 PM final-close check,
+run_final_check.py, which emails only if the final close changes it.
 
 Scheduled Mon-Fri at 2:30 PM Central, same timing as the MaxAlpha backtest
 project (see installer/install.ps1) -- a Task Scheduler weekly trigger
@@ -27,6 +29,7 @@ import bootstrap
 import live_preview
 import notify
 import refresh_chart
+import status_store
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "curated.duckdb"
 
@@ -59,6 +62,12 @@ def main() -> None:
     except Exception as exc:
         print(f"[run_daily] could not build the live preview, skipping the status email: {exc}")
         return
+    # Saved before (and regardless of) the email, so the 3:15 PM final-close
+    # check always has a baseline to compare against.
+    try:
+        status_store.save_baseline(preview)
+    except Exception as exc:
+        print(f"[run_daily] could not save the 2:30 PM baseline: {exc}")
     notify.send_daily_status(preview)
 
 

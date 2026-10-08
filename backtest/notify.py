@@ -216,3 +216,98 @@ def send_daily_status(preview: dict) -> None:
               f"recommended={preview['preview']['holding']} (live={preview['isLive']})")
     except Exception as exc:
         print(f"[notify] FAILED to send email: {exc}")
+
+
+# ---- 3:15 PM final-close check (run_final_check.py) ----
+def _final_details(preview: dict, baseline: dict | None) -> dict:
+    """What moved between the 2:30 PM snapshot and the final close."""
+    final = preview["preview"]
+    flipped, moves = [], []
+    if baseline:
+        if baseline["growthUp"] != final["growthUp"]:
+            flipped.append(f"Growth (S&P 500 vs 200-day average): {'up' if baseline['growthUp'] else 'down'} -> {'up' if final['growthUp'] else 'down'}")
+        if baseline["inflationOn"] != final["inflationOn"]:
+            flipped.append(f"Inflation signal: {'ON' if baseline['inflationOn'] else 'OFF'} -> {'ON' if final['inflationOn'] else 'OFF'}")
+        old_spx, new_spx = baseline["inputs"]["spx"], final["inputs"]["spx"]
+        moves.append(f"S&P 500 {old_spx:,.2f} -> {new_spx:,.2f} ({new_spx / old_spx - 1:+.2%}); "
+                     f"200-day average {final['inputs']['sma200']:,.2f}")
+    return {"flipped": flipped, "moves": moves}
+
+
+def format_change_alert(preview: dict, baseline: dict | None, data_final: bool) -> tuple[str, str, str]:
+    final = preview["preview"]
+    new = final["holding"]
+    d = _final_details(preview, baseline)
+    if baseline:
+        old = baseline["holding"]
+        subject = f"Inflation Compass ALERT: allocation changed after the 2:30 PM run: {old} -> {new}"
+        headline = f"The final close changed the recommended allocation from {old} (2:30 PM preview) to {new}."
+    else:
+        old = None
+        subject = f"Inflation Compass final close: recommended allocation {new} (no 2:30 PM baseline today)"
+        headline = f"No 2:30 PM run was recorded today to compare against; the final-close allocation is {new}."
+    warn = "" if data_final else (
+        "Warning: Yahoo's daily bars for today had not stabilized when this ran, so these closing prices may still move.")
+
+    text = [headline, ""]
+    if old:
+        text.append(f"2:30 PM preview: {_describe(baseline)}")
+    text.append(f"Final close ({final['date']}): {_describe(final)}")
+    if d["flipped"]:
+        text += ["", "Signals that flipped since 2:30 PM:"] + [f"  {x}" for x in d["flipped"]]
+    if d["moves"]:
+        text += ["", "Closing prices vs the 2:30 PM snapshot:"] + [f"  {x}" for x in d["moves"]]
+    text += ["", f"Signal inputs: {_signal_inputs_text(final)}"]
+    if warn:
+        text += ["", warn]
+    text += ["", "Not investment advice — see the dashboard for the full picture."]
+
+    cards = ""
+    if old:
+        cards += _card_html("2:30 PM preview", HOLDING_COLOR_HEX.get(old, "#5b6272"), old,
+                            f"{REGIME_LABELS.get(baseline['regime'], baseline['regime'])} &mdash; live intraday snapshot")
+    cards += _card_html("Final close signal" + (" &mdash; CHANGED" if old else ""),
+                        HOLDING_COLOR_HEX.get(new, "#5b6272"), new,
+                        f"{REGIME_LABELS.get(final['regime'], final['regime'])} &mdash; decided at the close of {final['date']}")
+    li = lambda items: "".join(f"<li>{x}</li>" for x in items)  # noqa: E731
+    ul = f"margin:0 0 8px 18px;padding:0;font-family:{MONO_STACK};font-size:12px;"
+    head = "font-size:12.5px;font-weight:700;margin:6px 0 2px;"
+    detail = ""
+    if d["flipped"]:
+        detail += f'<div style="{head}">Signals that flipped since 2:30 PM</div><ul style="{ul}">{li(d["flipped"])}</ul>'
+    if d["moves"]:
+        detail += f'<div style="{head}">Closing prices vs the 2:30 PM snapshot</div><ul style="{ul}">{li(d["moves"])}</ul>'
+    detail += f'<div style="font-size:12px;color:#5b6272;margin:6px 0;">{_signal_inputs_text(final)}</div>'
+    warn_html = (f'<div style="margin:8px 0;padding:9px 11px;background:#fff4e5;border:1px solid #f0c27b;'
+                 f'border-radius:6px;font-size:12px;color:#7a4a00;">{warn}</div>') if warn else ""
+    title = "Allocation Changed" if old else "Final-Close Signal"
+    html = f"""
+<div style="max-width:600px;margin:0 auto;font-family:{FONT_STACK};color:#171a24;background:#ffffff;">
+  <div style="padding:22px 24px 16px;border-bottom:2px solid #eef0f6;">
+    <div style="font-size:19px;font-weight:700;">Inflation Compass &mdash; {title}</div>
+    <div style="font-size:12.5px;color:#5b6272;margin-top:3px;">{headline}</div>
+  </div>
+  <div style="padding:20px 24px 4px;">
+    {cards}
+    <div style="font-size:12.5px;color:#171a24;line-height:1.55;font-family:{FONT_STACK};">{detail}{warn_html}</div>
+  </div>
+  <div style="padding:6px 24px 22px;font-size:12px;color:#5b6272;line-height:1.6;font-family:{FONT_STACK};">
+    <b>Not investment advice</b> &mdash; see the dashboard for the full picture.
+  </div>
+</div>"""
+    return subject, "\n".join(text), html
+
+
+def send_change_alert(preview: dict, baseline: dict | None, data_final: bool) -> bool:
+    cfg = load_config()
+    if cfg is None:
+        print("[notify] email_config.json is missing/incomplete -- skipping the final-close email")
+        return False
+    subject, text_body, html_body = format_change_alert(preview, baseline, data_final)
+    try:
+        send_email(cfg, subject, text_body, html_body)
+        print(f"[notify] sent final-close email: {subject}")
+        return True
+    except Exception as exc:
+        print(f"[notify] FAILED to send final-close email: {exc}")
+        return False

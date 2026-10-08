@@ -1,11 +1,19 @@
-# Launcher for the Windows Scheduled Task -- runs run_daily.py (trading-day
-# gated refresh + allocation-change email, see that file) via the project's
-# own venv and logs full output to a timestamped file, since the task runs
+# Launcher for the Windows Scheduled Tasks -- runs run_daily.py (trading-day
+# gated refresh + daily status email, see that file) via the project's own
+# venv and logs full output to a timestamped file, since the task runs
 # unattended and errors would otherwise go unnoticed.
+#
+# -TaskScript / -LogPrefix let the same launcher run the 3:15 PM final-close
+# check (run_final_check.py, logs final_*.log) alongside the 2:30 PM refresh
+# (run_daily.py, logs refresh_*.log).
 #
 # Not meant to be run directly by a person day-to-day; run
 # backtest/run_daily.py yourself for that. This wrapper exists so the
 # Scheduled Task has somewhere to send its output.
+param(
+    [string]$TaskScript = "run_daily.py",
+    [string]$LogPrefix = "refresh"
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -13,15 +21,15 @@ $logDir = Join-Path $PSScriptRoot "refresh_logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = Join-Path $logDir "refresh_$stamp.log"
+$logFile = Join-Path $logDir "${LogPrefix}_$stamp.log"
 
 $python = Join-Path $PSScriptRoot "..\.venv\Scripts\python.exe"
-$script = Join-Path $PSScriptRoot "run_daily.py"
+$script = Join-Path $PSScriptRoot $TaskScript
 
 try {
     & $python $script *>&1 | Out-File -FilePath $logFile -Encoding utf8
     if ($LASTEXITCODE -ne 0) {
-        throw "run_daily.py exited with code $LASTEXITCODE"
+        throw "$TaskScript exited with code $LASTEXITCODE"
     }
     "[run_refresh] succeeded at $(Get-Date -Format o)" | Add-Content -Path $logFile -Encoding utf8
 }
@@ -30,5 +38,5 @@ catch {
     throw
 }
 
-# Keep only the 20 most recent logs
-Get-ChildItem $logDir -Filter "refresh_*.log" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 | Remove-Item -Force
+# Keep only the 20 most recent logs of this kind
+Get-ChildItem $logDir -Filter "${LogPrefix}_*.log" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 | Remove-Item -Force
