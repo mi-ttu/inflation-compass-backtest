@@ -139,6 +139,11 @@ carried forward). It's flagged "not final" while the session is open, and
 the email calls out a **CHANGE** when the two cards differ. Sent as rich
 HTML with a plain-text fallback.
 
+Both emails also carry a **decision matrix** - every combination of the four
+signals (Growth, Level, Momentum, Sector) with the resulting inflation state,
+regime and allocation, and the row you're currently in highlighted. It is
+generated from the same `decide()` the signal uses, so it can't drift from it.
+
 Both emails (the 2:30 PM status and the 3:15 PM alert) also embed four
 **signal charts** as inline images, in the style of the MaxAlpha project's
 emails: the last ~3 months of each input against its threshold, with the

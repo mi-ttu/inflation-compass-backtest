@@ -117,6 +117,7 @@ def _signal_inputs_text(preview_info: dict) -> str:
 
 
 SHORT_LABELS = {"XLE": "XLE", "QLD": "QLD", "XLU": "XLU", "XLP+IEF_5050": "XLP+IEF"}
+REGIME_SHORT = {**REGIME_LABELS, "disinflation": "Disinflation"}  # fits the matrix's narrow column on a phone
 
 
 def _cid(chart: dict) -> str:
@@ -135,6 +136,102 @@ def _build_charts(preview: dict) -> list[dict]:
     except Exception as exc:
         print(f"[notify] signal charts skipped: {exc}")
         return []
+
+
+# Every combination of the four input signals, written compactly: None means
+# "doesn't matter" (Level False makes Momentum/Sector irrelevant, and a True
+# Momentum makes Sector irrelevant). Outcomes come from live_preview.decide(),
+# the same function the daily signal uses, so this table can't drift from it.
+MATRIX_PATTERNS = [
+    # (growth, level, momentum, sector)
+    (True, False, None, None),
+    (True, True, True, None),
+    (True, True, False, True),
+    (True, True, False, False),
+    (False, False, None, None),
+    (False, True, True, None),
+    (False, True, False, True),
+    (False, True, False, False),
+]
+
+
+def _matrix_rows() -> list[dict]:
+    from live_preview import decide
+    rows = []
+    for pat in MATRIX_PATTERNS:
+        g, lv, m, s = pat
+        d = decide(g, lv, bool(m), bool(s))
+        rows.append({"pattern": pat, "inflationOn": d["inflationOn"], "holding": d["holding"], "regime": d["regime"]})
+    return rows
+
+
+def _current_states(history) -> tuple | None:
+    if history is None or len(history) == 0:
+        return None
+    last = history.iloc[-1]
+    return (bool(last["growth_up"]), bool(last["breakeven_above_target"]),
+            bool(last["breakeven_momentum_up"]), bool(last["asset_momentum_up"]))
+
+
+def _row_matches(pattern: tuple, states: tuple) -> bool:
+    return all(p is None or p == s for p, s in zip(pattern, states))
+
+
+def _matrix_text(history) -> list[str]:
+    states = _current_states(history)
+    if states is None:
+        return []
+    tf = lambda v: "-    " if v is None else ("True " if v else "False")  # noqa: E731
+    out = ["", "Decision matrix (- = doesn't matter; inflation is ON only when Level is True and Momentum or Sector is True):",
+           "  Growth | Level | Moment | Sector | Inflation | Allocation"]
+    for r in _matrix_rows():
+        g, lv, m, s = r["pattern"]
+        mark = "   <-- now" if _row_matches(r["pattern"], states) else ""
+        out.append(f"  {tf(g)}  | {tf(lv)} | {tf(m)}  | {tf(s)}  | {'ON ' if r['inflationOn'] else 'OFF'}       | "
+                   f"{SHORT_LABELS.get(r['holding'], r['holding'])} ({REGIME_LABELS.get(r['regime'], r['regime'])}){mark}")
+    return out
+
+
+def _matrix_html(history) -> str:
+    states = _current_states(history)
+    if states is None:
+        return ""
+    th = (f"padding:6px 6px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;"
+          f"color:#5b6272;text-align:center;border-bottom:2px solid #eef0f6;font-family:{FONT_STACK};")
+
+    def tf(v) -> str:
+        if v is None:
+            return f'<span style="color:#9aa1b0;">&mdash;</span>'
+        return f'<span style="color:{"#059669" if v else "#c0392b"};font-weight:700;">{"True" if v else "False"}</span>'
+
+    body = ""
+    for r in _matrix_rows():
+        now = _row_matches(r["pattern"], states)
+        bg = "background:#fff6d6;" if now else ""
+        edge = "border-left:4px solid #f59e0b;" if now else "border-left:4px solid transparent;"
+        td = f"padding:7px 6px;font-size:12px;text-align:center;border-bottom:1px solid #eef0f6;font-family:{MONO_STACK};{bg}"
+        g, lv, m, s = r["pattern"]
+        color = HOLDING_COLOR_HEX.get(r["holding"], "#5b6272")
+        chip = (f'<span style="display:inline-block;background:{color};color:#ffffff;font-weight:700;padding:2px 8px;'
+                f'border-radius:5px;font-size:11.5px;">{SHORT_LABELS.get(r["holding"], r["holding"])}</span> '
+                f'<span style="font-family:{FONT_STACK};font-size:11px;color:#5b6272;">{REGIME_SHORT.get(r["regime"], r["regime"])}</span>')
+        marker = ' <b style="color:#b45309;font-family:' + FONT_STACK + ';font-size:10.5px;">NOW</b>' if now else ""
+        body += (f'<tr><td style="{td}{edge}">{tf(g)}</td><td style="{td}">{tf(lv)}</td><td style="{td}">{tf(m)}</td>'
+                 f'<td style="{td}">{tf(s)}</td>'
+                 f'<td style="{td}">{"<b>ON</b>" if r["inflationOn"] else "OFF"}</td>'
+                 f'<td style="{td}text-align:left;">{chip}{marker}</td></tr>')
+    return f"""
+<div style="padding:4px 24px 8px;">
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#5b6272;font-family:{FONT_STACK};">Decision matrix</div>
+  <div style="font-size:11.5px;color:#5b6272;margin:3px 0 8px;line-height:1.55;font-family:{FONT_STACK};">
+    How the four signals below map to the allocation. &mdash; means the signal doesn't matter in that row. Inflation is ON only
+    when Level is True and Momentum or Sector is True; Growth then picks between the two regimes on each side.
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #dde1ea;border-radius:8px;border-collapse:separate;">
+    <tr><th style="{th}">Growth</th><th style="{th}">Level</th><th style="{th}">Momentum</th><th style="{th}">Sector</th><th style="{th}">Inflation</th><th style="{th}text-align:left;">Allocation</th></tr>
+    {body}
+  </table>
+</div>"""
 
 
 def _signals_text(charts: list[dict] | None) -> list[str]:
@@ -204,7 +301,7 @@ def format_daily_status_text(preview: dict, charts: list[dict] | None = None) ->
         f"{rec_line}\n\n"
         f"{change_line}"
         f"Signal inputs: {_signal_inputs_text(rec)}\n"
-        + "\n".join(_signals_text(charts))
+        + "\n".join(_matrix_text(preview.get("history")) + _signals_text(charts))
         + "\n\nNot investment advice — see the dashboard for the full picture."
     )
     return subject, body
@@ -269,6 +366,7 @@ def format_daily_status_html(preview: dict, charts: list[dict] | None = None) ->
     {current_card}
     {rec_card}
   </div>
+  {_matrix_html(preview.get("history"))}
   {_signals_html(charts, preview.get("history"))}
   <div style="padding:6px 24px 22px;font-size:12px;color:#5b6272;line-height:1.6;font-family:{FONT_STACK};">
     <b>Not investment advice</b> &mdash; see the dashboard for the full picture.
@@ -333,7 +431,7 @@ def format_change_alert(preview: dict, baseline: dict | None, data_final: bool,
         text += ["", "Signals that flipped since 2:30 PM:"] + [f"  {x}" for x in d["flipped"]]
     if d["moves"]:
         text += ["", "Closing prices vs the 2:30 PM snapshot:"] + [f"  {x}" for x in d["moves"]]
-    text += ["", f"Signal inputs: {_signal_inputs_text(final)}"] + _signals_text(charts)
+    text += ["", f"Signal inputs: {_signal_inputs_text(final)}"] + _matrix_text(preview.get("history")) + _signals_text(charts)
     if warn:
         text += ["", warn]
     text += ["", "Not investment advice — see the dashboard for the full picture."]
@@ -367,6 +465,7 @@ def format_change_alert(preview: dict, baseline: dict | None, data_final: bool,
     {cards}
     <div style="font-size:12.5px;color:#171a24;line-height:1.55;font-family:{FONT_STACK};">{detail}{warn_html}</div>
   </div>
+  {_matrix_html(preview.get("history"))}
   {_signals_html(charts, preview.get("history"))}
   <div style="padding:6px 24px 22px;font-size:12px;color:#5b6272;line-height:1.6;font-family:{FONT_STACK};">
     <b>Not investment advice</b> &mdash; see the dashboard for the full picture.
