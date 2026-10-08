@@ -182,7 +182,14 @@ def _matrix_text(history) -> list[str]:
     if states is None:
         return []
     tf = lambda v: "-    " if v is None else ("True " if v else "False")  # noqa: E731
-    out = ["", "Decision matrix (- = doesn't matter; inflation is ON only when Level is True and Momentum or Sector is True):",
+    out = ["", "Decision matrix -- four yes/no questions decide the allocation:",
+           "  Growth:   is the S&P 500 above its 200-day average?",
+           "  Level:    is the 5-year breakeven inflation rate above 2.0%?",
+           "  Momentum: is that breakeven higher than it was 60 trading days ago?",
+           "  Sector:   are cyclical sectors beating defensive ones over the last 60 days?",
+           "  Inflation is ON only when Level is True and Momentum or Sector is True; Growth then picks",
+           "  between the two allocations on each side. (- = that signal doesn't matter in the row)",
+           "",
            "  Growth | Level | Moment | Sector | Inflation | Allocation"]
     for r in _matrix_rows():
         g, lv, m, s = r["pattern"]
@@ -223,9 +230,14 @@ def _matrix_html(history) -> str:
     return f"""
 <div style="padding:4px 24px 8px;">
   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#5b6272;font-family:{FONT_STACK};">Decision matrix</div>
-  <div style="font-size:11.5px;color:#5b6272;margin:3px 0 8px;line-height:1.55;font-family:{FONT_STACK};">
-    How the four signals below map to the allocation. &mdash; means the signal doesn't matter in that row. Inflation is ON only
-    when Level is True and Momentum or Sector is True; Growth then picks between the two regimes on each side.
+  <div style="font-size:11.5px;color:#5b6272;margin:3px 0 8px;line-height:1.6;font-family:{FONT_STACK};">
+    Four yes/no questions (charted below) decide the allocation:<br>
+    <b>Growth</b> &mdash; is the S&amp;P 500 above its 200-day average?<br>
+    <b>Level</b> &mdash; is the 5-year breakeven inflation rate above 2.0%?<br>
+    <b>Momentum</b> &mdash; is that breakeven higher than it was 60 trading days ago?<br>
+    <b>Sector</b> &mdash; are cyclical sectors beating defensive ones over the last 60 days?<br>
+    Inflation is ON only when Level is True and Momentum or Sector is True. Growth then picks between the two
+    allocations on each side. &mdash; means that signal doesn't matter in that row.
   </div>
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #dde1ea;border-radius:8px;border-collapse:separate;">
     <tr><th style="{th}">Growth</th><th style="{th}">Level</th><th style="{th}">Momentum</th><th style="{th}">Sector</th><th style="{th}">Inflation</th><th style="{th}text-align:left;">Allocation</th></tr>
