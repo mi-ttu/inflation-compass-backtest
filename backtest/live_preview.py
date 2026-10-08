@@ -39,6 +39,7 @@ DB_PATH = PROJECT_ROOT / "data" / "curated.duckdb"
 SECTORS = list(POSITIVE_BASKET) + list(NEGATIVE_BASKET)
 LIVE_TICKERS = ["^GSPC", *SECTORS]
 SUBSTITUTION = {"XLK": "QLD"}
+HISTORY_DAYS = 63
 
 
 def live_quote(ticker: str) -> float:
@@ -81,6 +82,11 @@ def build_preview() -> dict:
         ).fetchone()[0]
         for t in LIVE_TICKERS
     }
+    # The calendar-aligned series is forward-filled to the newest trading day,
+    # so its last date is not when FRED last published.
+    inflation_as_of = con.execute(
+        "SELECT MAX(observation_date) FROM fred_series WHERE series_id = 'T5YIE' AND NOT is_forward_filled"
+    ).fetchone()[0]
     con.close()
 
     # T5YIE is published with a lag, so the newest trading days have no
@@ -106,8 +112,12 @@ def build_preview() -> dict:
         # delayed intraday price in the Close column -- that is not a final
         # close, so drop it and take the live-quote path below instead.
         df = df[df["trading_date"] < today].reset_index(drop=True)
+    # Display only (the breakeven-momentum chart): the value 60 trading days
+    # earlier. The True/False state always comes from the signal flags.
+    df["breakeven_lagged"] = df["inflation_level"].shift(MOMENTUM_WINDOW_DAYS)
     has_today = df["trading_date"].iloc[-1] >= today
     last = df.iloc[-1]
+    live_row = None
 
     if has_today:
         # The EOD pipeline already ingested a finalized close for today --
@@ -132,15 +142,35 @@ def build_preview() -> dict:
         current = row_decision(last)
         preview = decide(spx > sma, bool(last["breakeven_above_target"]), bool(last["breakeven_momentum_up"]), slope > 0)
         preview["date"] = str(today)[:10]
+        live_row = {
+            "trading_date": today, "spy_close": spx, "spy_sma_200": float(sma), "growth_up": bool(spx > sma),
+            "inflation_level": float(last["inflation_level"]),
+            "breakeven_above_target": bool(last["breakeven_above_target"]),
+            "breakeven_momentum_up": bool(last["breakeven_momentum_up"]),
+            "breakeven_lagged": float(df["inflation_level"].iloc[len(df) - MOMENTUM_WINDOW_DAYS]),
+            "sector_basket_ratio": float(ratios[-1]), "sector_basket_slope_60d": float(slope),
+            "asset_momentum_up": bool(slope > 0),
+        }
+
+    # Last HISTORY_DAYS sessions of every input signal (today's live-quote row
+    # included when the session is still open), each tagged with the holding
+    # that day's signals decided -- feeds the email's signal charts.
+    history = pd.concat([df, pd.DataFrame([live_row])], ignore_index=True) if live_row else df
+    history = history.tail(HISTORY_DAYS).reset_index(drop=True)
+    history["holding"] = [
+        decide(r.growth_up, r.breakeven_above_target, r.breakeven_momentum_up, r.asset_momentum_up)["holding"]
+        for r in history.itertuples()
+    ]
 
     preview["inputs"] = {
         "spx": spx,
         "sma200": float(sma),
         "breakeven": float(last["inflation_level"]),
         "breakevenTarget": BREAKEVEN_TARGET,
-        "inflationAsOf": str(inflation["trading_date"].max())[:10],
+        "inflationAsOf": str(inflation_as_of)[:10],
     }
-    return {"current": current, "preview": preview, "isLive": live_prices is not None, "livePrices": live_prices}
+    return {"current": current, "preview": preview, "isLive": live_prices is not None, "livePrices": live_prices,
+            "history": history}
 
 
 def main() -> None:

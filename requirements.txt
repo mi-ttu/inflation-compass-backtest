@@ -5,3 +5,4 @@ yfinance>=0.2.43
 pandas_market_calendars>=4.4
 requests>=2.32
 python-dateutil>=2.9
+matplotlib>=3.8

@@ -139,6 +139,16 @@ carried forward). It's flagged "not final" while the session is open, and
 the email calls out a **CHANGE** when the two cards differ. Sent as rich
 HTML with a plain-text fallback.
 
+Both emails (the 2:30 PM status and the 3:15 PM alert) also embed four
+**signal charts** as inline images, in the style of the MaxAlpha project's
+emails: the last ~3 months of each input against its threshold, with the
+background shaded by the holding decided that day, and a True/False badge -
+Growth (S&P 500 vs its 200-day average), Inflation level (5y breakeven vs
+2.0%), Inflation momentum (breakeven vs 60 trading days earlier) and Sector
+momentum (cyclicals/defensives 60-day trend). Rendered with matplotlib
+(`backtest/signal_charts.py`); if matplotlib is unavailable the email is
+sent without them.
+
 It's opt-in and fails safe: if `backtest/email_config.json` doesn't exist
 or is incomplete, notification is silently skipped with a printed note —
 the data refresh itself never fails just because email isn't set up. To

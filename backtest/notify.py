@@ -26,6 +26,7 @@ Not meant to be run standalone -- called from run_daily.py after a refresh.
 """
 import json
 import smtplib
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -68,7 +69,9 @@ def load_config() -> dict | None:
     return cfg
 
 
-def send_email(cfg: dict, subject: str, text_body: str, html_body: str) -> None:
+def send_email(cfg: dict, subject: str, text_body: str, html_body: str, images: list[tuple[str, bytes]] | None = None) -> None:
+    """images: [(content_id, png_bytes)] embedded inline and referenced from
+    the HTML as <img src="cid:content_id">."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = cfg["sender_email"]
@@ -78,7 +81,18 @@ def send_email(cfg: dict, subject: str, text_body: str, html_body: str) -> None:
     # anything that can't (or a user who reads raw source) still gets a
     # complete, readable plain-text version, not a pile of markup.
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    if images:
+        # HTML + its inline images travel together as multipart/related.
+        related = MIMEMultipart("related")
+        related.attach(MIMEText(html_body, "html", "utf-8"))
+        for cid, png in images:
+            img = MIMEImage(png, "png")
+            img.add_header("Content-ID", f"<{cid}>")
+            img.add_header("Content-Disposition", "inline", filename=f"{cid.split('@')[0]}.png")
+            related.attach(img)
+        msg.attach(related)
+    else:
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     with smtplib.SMTP(cfg["smtp_host"], int(cfg["smtp_port"]), timeout=30) as server:
         server.starttls()
@@ -102,7 +116,65 @@ def _signal_inputs_text(preview_info: dict) -> str:
     )
 
 
-def format_daily_status_text(preview: dict) -> tuple[str, str]:
+SHORT_LABELS = {"XLE": "XLE", "QLD": "QLD", "XLU": "XLU", "XLP+IEF_5050": "XLP+IEF"}
+
+
+def _cid(chart: dict) -> str:
+    return f"sig-{chart['key']}@inflationcompass"
+
+
+def _build_charts(preview: dict) -> list[dict]:
+    """The four input-signal charts, or [] if they can't be drawn (e.g.
+    matplotlib isn't installed) -- an email without charts beats no email."""
+    if preview.get("history") is None:
+        return []
+    try:
+        import signal_charts
+        return signal_charts.render_signal_charts(
+            preview["history"], HOLDING_COLOR_HEX, preview["preview"]["inputs"]["inflationAsOf"])
+    except Exception as exc:
+        print(f"[notify] signal charts skipped: {exc}")
+        return []
+
+
+def _signals_text(charts: list[dict] | None) -> list[str]:
+    if not charts:
+        return []
+    return ["", "Signal status (inflation signal = level AND (momentum OR sector momentum)):"] + [
+        f"  {c['title']}: {'True' if c['state'] else 'False'} ({c['text']})" for c in charts]
+
+
+def _signals_html(charts: list[dict] | None, history) -> str:
+    if not charts:
+        return ""
+    first, last = str(history["trading_date"].iloc[0])[:10], str(history["trading_date"].iloc[-1])[:10]
+    legend = "".join(
+        f'<span style="display:inline-block;margin-right:12px;white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;'
+        f'border-radius:2px;background:{HOLDING_COLOR_HEX[k]};opacity:.55;vertical-align:middle;margin-right:4px;"></span>{SHORT_LABELS[k]}</span>'
+        for k in ("XLE", "QLD", "XLU", "XLP+IEF_5050"))
+    blocks = ""
+    for c in charts:
+        badge_bg, badge_label = ("#059669", "True") if c["state"] else ("#c0392b", "False")
+        blocks += f"""
+    <div style="border:1px solid #dde1ea;border-radius:10px;padding:12px 14px 8px;margin-bottom:12px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td style="font-size:13.5px;font-weight:700;color:#171a24;font-family:{FONT_STACK};">{c["title"]}</td>
+        <td align="right" style="white-space:nowrap;"><span style="display:inline-block;background:{badge_bg};color:#ffffff;font-size:11.5px;font-weight:700;padding:2px 10px;border-radius:5px;font-family:{FONT_STACK};">{badge_label}</span></td>
+      </tr></table>
+      <div style="font-size:11.5px;color:#5b6272;margin:3px 0 8px;font-family:{MONO_STACK};">{c["text"]}</div>
+      <img src="cid:{_cid(c)}" alt="{c["title"]} chart" width="552" style="display:block;width:100%;max-width:552px;height:auto;border:0;">
+    </div>"""
+    return f"""
+<div style="padding:4px 24px 4px;">
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#5b6272;font-family:{FONT_STACK};">Signal status</div>
+  <div style="font-size:11.5px;color:#5b6272;margin:3px 0 12px;line-height:1.55;font-family:{FONT_STACK};">
+    {first} to {last}. Black line = the input; magenta = its threshold or reference. Inflation signal = level AND
+    (momentum OR sector momentum); growth and inflation together pick the regime. Background = holding decided that day: {legend}
+  </div>{blocks}
+</div>"""
+
+
+def format_daily_status_text(preview: dict, charts: list[dict] | None = None) -> tuple[str, str]:
     """preview is live_preview.build_preview()'s return value:
     {"current": {...}, "preview": {...}, "isLive": bool, "livePrices": dict|None}."""
     current, rec = preview["current"], preview["preview"]
@@ -131,8 +203,9 @@ def format_daily_status_text(preview: dict) -> tuple[str, str]:
         f"Current allocation (held today, decided at the close of {current['date']}): {_describe(current)}\n\n"
         f"{rec_line}\n\n"
         f"{change_line}"
-        f"Signal inputs: {_signal_inputs_text(rec)}\n\n"
-        "Not investment advice — see the dashboard for the full picture."
+        f"Signal inputs: {_signal_inputs_text(rec)}\n"
+        + "\n".join(_signals_text(charts))
+        + "\n\nNot investment advice — see the dashboard for the full picture."
     )
     return subject, body
 
@@ -148,7 +221,7 @@ def _card_html(label: str, color: str, holding: str, sub_html: str, extra_html: 
 </div>"""
 
 
-def format_daily_status_html(preview: dict) -> str:
+def format_daily_status_html(preview: dict, charts: list[dict] | None = None) -> str:
     current, rec = preview["current"], preview["preview"]
     changes = current["holding"] != rec["holding"]
 
@@ -196,6 +269,7 @@ def format_daily_status_html(preview: dict) -> str:
     {current_card}
     {rec_card}
   </div>
+  {_signals_html(charts, preview.get("history"))}
   <div style="padding:6px 24px 22px;font-size:12px;color:#5b6272;line-height:1.6;font-family:{FONT_STACK};">
     <b>Not investment advice</b> &mdash; see the dashboard for the full picture.
   </div>
@@ -208,12 +282,13 @@ def send_daily_status(preview: dict) -> None:
         print("[notify] email_config.json is missing/incomplete -- skipping daily status email")
         return
 
-    subject, text_body = format_daily_status_text(preview)
-    html_body = format_daily_status_html(preview)
+    charts = _build_charts(preview)
+    subject, text_body = format_daily_status_text(preview, charts)
+    html_body = format_daily_status_html(preview, charts)
     try:
-        send_email(cfg, subject, text_body, html_body)
+        send_email(cfg, subject, text_body, html_body, [(_cid(c), c["png"]) for c in charts])
         print(f"[notify] sent daily status email: current={preview['current']['holding']} "
-              f"recommended={preview['preview']['holding']} (live={preview['isLive']})")
+              f"recommended={preview['preview']['holding']} (live={preview['isLive']}, {len(charts)} signal charts)")
     except Exception as exc:
         print(f"[notify] FAILED to send email: {exc}")
 
@@ -234,7 +309,8 @@ def _final_details(preview: dict, baseline: dict | None) -> dict:
     return {"flipped": flipped, "moves": moves}
 
 
-def format_change_alert(preview: dict, baseline: dict | None, data_final: bool) -> tuple[str, str, str]:
+def format_change_alert(preview: dict, baseline: dict | None, data_final: bool,
+                        charts: list[dict] | None = None) -> tuple[str, str, str]:
     final = preview["preview"]
     new = final["holding"]
     d = _final_details(preview, baseline)
@@ -257,7 +333,7 @@ def format_change_alert(preview: dict, baseline: dict | None, data_final: bool) 
         text += ["", "Signals that flipped since 2:30 PM:"] + [f"  {x}" for x in d["flipped"]]
     if d["moves"]:
         text += ["", "Closing prices vs the 2:30 PM snapshot:"] + [f"  {x}" for x in d["moves"]]
-    text += ["", f"Signal inputs: {_signal_inputs_text(final)}"]
+    text += ["", f"Signal inputs: {_signal_inputs_text(final)}"] + _signals_text(charts)
     if warn:
         text += ["", warn]
     text += ["", "Not investment advice — see the dashboard for the full picture."]
@@ -291,6 +367,7 @@ def format_change_alert(preview: dict, baseline: dict | None, data_final: bool) 
     {cards}
     <div style="font-size:12.5px;color:#171a24;line-height:1.55;font-family:{FONT_STACK};">{detail}{warn_html}</div>
   </div>
+  {_signals_html(charts, preview.get("history"))}
   <div style="padding:6px 24px 22px;font-size:12px;color:#5b6272;line-height:1.6;font-family:{FONT_STACK};">
     <b>Not investment advice</b> &mdash; see the dashboard for the full picture.
   </div>
@@ -303,9 +380,10 @@ def send_change_alert(preview: dict, baseline: dict | None, data_final: bool) ->
     if cfg is None:
         print("[notify] email_config.json is missing/incomplete -- skipping the final-close email")
         return False
-    subject, text_body, html_body = format_change_alert(preview, baseline, data_final)
+    charts = _build_charts(preview)
+    subject, text_body, html_body = format_change_alert(preview, baseline, data_final, charts)
     try:
-        send_email(cfg, subject, text_body, html_body)
+        send_email(cfg, subject, text_body, html_body, [(_cid(c), c["png"]) for c in charts])
         print(f"[notify] sent final-close email: {subject}")
         return True
     except Exception as exc:
