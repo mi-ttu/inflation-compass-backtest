@@ -214,12 +214,15 @@ TRADED_REGIME_MAP = {
 
 
 def build_current_allocation() -> dict:
+    """The banner's daily card follows the 2-day-confirmed series, matching what
+    the emails recommend (see live_preview.py); the monthly card is unaffected."""
     monthly = load_series("hybrid_qld_goldilocks_xle_reflation_returns.csv")
-    daily = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_returns.csv")
+    daily = load_series("hybrid_qld_goldilocks_xle_reflation_daily_signal_confirm2_returns.csv")
     monthly_holding = monthly["traded_holding"].iloc[-1]
     daily_holding = daily["traded_holding"].iloc[-1]
     return {
         "asOf": max(monthly.index.max(), daily.index.max()).strftime("%Y-%m-%d"),
+        "dailyRule": "confirm2",
         "monthly": {"holding": monthly_holding, "regime": TRADED_REGIME_MAP[monthly_holding]},
         "daily": {"holding": daily_holding, "regime": TRADED_REGIME_MAP[daily_holding]},
     }
@@ -232,6 +235,7 @@ def build_current_allocation_enhanced() -> dict:
     daily_holding = daily["traded_holding"].iloc[-1]
     return {
         "asOf": max(monthly.index.max(), daily.index.max()).strftime("%Y-%m-%d"),
+        "dailyRule": "none",  # no confirmed Enhanced variant exists
         "monthly": {"holding": monthly_holding, "regime": TRADED_REGIME_MAP[monthly_holding]},
         "daily": {"holding": daily_holding, "regime": TRADED_REGIME_MAP[daily_holding]},
     }

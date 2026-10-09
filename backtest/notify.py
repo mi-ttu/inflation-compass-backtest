@@ -366,11 +366,11 @@ def format_daily_status_html(preview: dict, charts: list[dict] | None = None) ->
     <b>Not final</b> &mdash; can still change before today's {rec['date']} close.<br>
     Quote inputs: <span style="font-family:{MONO_STACK};">{quotes}</span>
   </div>"""
-        rec_label = "Recommended at Today&rsquo;s Close &mdash; Live Preview"
+        rec_label = "Recommended at Today&rsquo;s Close &mdash; Live Preview &middot; 2-day rule"
         rec_sub = f"{REGIME_LABELS.get(rec['regime'], rec['regime'])} &mdash; live intraday preview, decided as-of now"
     else:
         rec_extra = ""
-        rec_label = "Recommended at Today&rsquo;s Close &mdash; Final"
+        rec_label = "Recommended at Today&rsquo;s Close &mdash; Final &middot; 2-day rule"
         rec_sub = f"{REGIME_LABELS.get(rec['regime'], rec['regime'])} &mdash; decided at the close of {rec['date']}"
     if rec.get("pending"):
         rec_extra += f"""

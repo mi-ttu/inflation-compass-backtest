@@ -147,8 +147,11 @@ the 1-2 day flips around a threshold (about 4.5 a year in the plain daily rules;
 backtest drops holdings of 2 days or less to about 1 a year at the same CAGR). When
 today's raw signal disagrees with the confirmed allocation, the email says so ("pending
 confirmation") and the decision matrix's NOW row shows the raw signal. This is a
-tested variant, not part of Varadi's published rules. The dashboard banner and the
-plain "Hybrid, Daily" series still show the unconfirmed daily signal.
+tested variant, not part of Varadi's published rules. The dashboard's
+"Current Recommended Allocation" banner follows the same confirmed signal on the Original
+view and labels it "2-day confirmed" (the Enhanced view has no confirmed variant, so its
+banner is labelled "unconfirmed"); the plain "Hybrid, Daily" chart series stays the
+unconfirmed daily signal, alongside its "2-day confirm" counterpart.
 
 Both emails also carry a **decision matrix** - every combination of the four
 signals (Growth, Level, Momentum, Sector) with the resulting inflation state,
