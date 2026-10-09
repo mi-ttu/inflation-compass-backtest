@@ -116,6 +116,20 @@ def _signal_inputs_text(preview_info: dict) -> str:
     )
 
 
+def _pending_text(rec: dict) -> str:
+    """One line about the 2-day confirmation rule, only when it is holding the
+    allocation back from today's raw signal."""
+    if not rec.get("pending"):
+        return ""
+    return (f"PENDING: today's raw signal reads {rec['rawHolding']}, but the 2-day confirmation rule keeps "
+            f"{rec['holding']} until that regime shows on a second consecutive close. If the next close reads "
+            f"{rec['rawHolding']} again, the allocation changes to {rec['rawHolding']}.")
+
+
+RULE_NOTE = ("2-day confirmation rule: the allocation changes only after the same new regime shows on two "
+             "consecutive closes, which filters out 1-2 day flips around a threshold.")
+
+
 SHORT_LABELS = {"XLE": "XLE", "QLD": "QLD", "XLU": "XLU", "XLP+IEF_5050": "XLP+IEF"}
 REGIME_SHORT = {**REGIME_LABELS, "disinflation": "Disinflation"}  # fits the matrix's narrow column on a phone
 
@@ -189,6 +203,7 @@ def _matrix_text(history) -> list[str]:
            "  Sector:   are cyclical sectors beating defensive ones over the last 60 days?",
            "  Inflation is ON only when Level is True and Momentum or Sector is True; Growth then picks",
            "  between the two allocations on each side. (- = that signal doesn't matter in the row)",
+           "  The '<-- now' row is today's raw signal. " + RULE_NOTE,
            "",
            "  Growth | Level | Moment | Sector | Inflation | Allocation"]
     for r in _matrix_rows():
@@ -237,7 +252,8 @@ def _matrix_html(history) -> str:
     <b>Momentum</b> &mdash; is that breakeven higher than it was 60 trading days ago?<br>
     <b>Sector</b> &mdash; are cyclical sectors beating defensive ones over the last 60 days?<br>
     Inflation is ON only when Level is True and Momentum or Sector is True. Growth then picks between the two
-    allocations on each side. &mdash; means that signal doesn't matter in that row.
+    allocations on each side. &mdash; means that signal doesn't matter in that row.<br>
+    The <b>NOW</b> row is today's raw signal. {RULE_NOTE}
   </div>
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #dde1ea;border-radius:8px;border-collapse:separate;">
     <tr><th style="{th}">Growth</th><th style="{th}">Level</th><th style="{th}">Momentum</th><th style="{th}">Sector</th><th style="{th}">Inflation</th><th style="{th}text-align:left;">Allocation</th></tr>
@@ -304,11 +320,12 @@ def format_daily_status_text(preview: dict, charts: list[dict] | None = None) ->
         rec_line = f"Recommended allocation at today's close (already final): {_describe(rec)}"
 
     change_line = (
-        f"CHANGE: the signal moves from {current['holding']} to {rec['holding']} (takes effect next session).\n\n"
+        f"CHANGE: the signal moves from {current['holding']} to {rec['holding']} (takes effect next session). "
+        f"The new regime has now shown on two consecutive closes.\n\n"
         if changes else ""
-    )
+    ) + (_pending_text(rec) + "\n\n" if rec.get("pending") else "")
     body = (
-        f"Hybrid (QLD/XLE), Daily variant.\n\n"
+        f"Hybrid (QLD/XLE), Daily variant with 2-day regime confirmation.\n\n"
         f"Current allocation (held today, decided at the close of {current['date']}): {_describe(current)}\n\n"
         f"{rec_line}\n\n"
         f"{change_line}"
@@ -355,6 +372,13 @@ def format_daily_status_html(preview: dict, charts: list[dict] | None = None) ->
         rec_extra = ""
         rec_label = "Recommended at Today&rsquo;s Close &mdash; Final"
         rec_sub = f"{REGIME_LABELS.get(rec['regime'], rec['regime'])} &mdash; decided at the close of {rec['date']}"
+    if rec.get("pending"):
+        rec_extra += f"""
+  <div style="{box}">
+    <b>Pending confirmation</b> &mdash; today's raw signal reads <b>{rec['rawHolding']}</b>, but the 2-day rule keeps
+    <b>{rec['holding']}</b> until that regime shows on a second consecutive close. If the next close reads
+    {rec['rawHolding']} again, the allocation changes to {rec['rawHolding']}.
+  </div>"""
     rec_extra += f"""
   <div style="{box}">
     <b>Signal inputs</b><br>{_signal_inputs_text(rec)}
@@ -365,14 +389,14 @@ def format_daily_status_html(preview: dict, charts: list[dict] | None = None) ->
     if changes:
         change_banner = f"""
   <div style="margin:0 24px;padding:10px 14px;background:#fff4e5;border:1px solid #f3c98b;border-radius:8px;font-size:13px;color:#7a4a00;font-family:{FONT_STACK};">
-    <b>Change:</b> the signal moves from <b>{current['holding']}</b> to <b>{rec['holding']}</b> (takes effect next session).
+    <b>Change:</b> the signal moves from <b>{current['holding']}</b> to <b>{rec['holding']}</b> (takes effect next session); the new regime has now shown on two consecutive closes.
   </div>"""
 
     return f"""
 <div style="max-width:600px;margin:0 auto;font-family:{FONT_STACK};color:#171a24;background:#ffffff;">
   <div style="padding:22px 24px 16px;border-bottom:2px solid #eef0f6;">
     <div style="font-size:19px;font-weight:700;">Inflation Compass Daily Status</div>
-    <div style="font-size:12.5px;color:#5b6272;margin-top:3px;">Hybrid (QLD/XLE), Daily &middot; latest session: <b>{rec['date']}</b></div>
+    <div style="font-size:12.5px;color:#5b6272;margin-top:3px;">Hybrid (QLD/XLE), Daily with 2-day confirmation &middot; latest session: <b>{rec['date']}</b></div>
   </div>{change_banner}
   <div style="padding:20px 24px 4px;">
     {current_card}
@@ -443,6 +467,8 @@ def format_change_alert(preview: dict, baseline: dict | None, data_final: bool,
         text += ["", "Signals that flipped since 2:30 PM:"] + [f"  {x}" for x in d["flipped"]]
     if d["moves"]:
         text += ["", "Closing prices vs the 2:30 PM snapshot:"] + [f"  {x}" for x in d["moves"]]
+    if final.get("pending"):
+        text += ["", _pending_text(final)]
     text += ["", f"Signal inputs: {_signal_inputs_text(final)}"] + _matrix_text(preview.get("history")) + _signals_text(charts)
     if warn:
         text += ["", warn]

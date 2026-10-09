@@ -139,6 +139,17 @@ carried forward). It's flagged "not final" while the session is open, and
 the email calls out a **CHANGE** when the two cards differ. Sent as rich
 HTML with a plain-text fallback.
 
+The allocation both emails recommend uses the **2-day regime confirmation rule**
+(the same rule as the dashboard's "Hybrid, Daily, 2-day confirm" series, reused from
+`simulate_hybrid_qld_goldilocks_xle_reflation_daily_signal_confirm2.py`): the holding
+changes only after the same new regime shows on two consecutive closes, which removes
+the 1-2 day flips around a threshold (about 4.5 a year in the plain daily rules; the
+backtest drops holdings of 2 days or less to about 1 a year at the same CAGR). When
+today's raw signal disagrees with the confirmed allocation, the email says so ("pending
+confirmation") and the decision matrix's NOW row shows the raw signal. This is a
+tested variant, not part of Varadi's published rules. The dashboard banner and the
+plain "Hybrid, Daily" series still show the unconfirmed daily signal.
+
 Both emails also carry a **decision matrix** - every combination of the four
 signals (Growth, Level, Momentum, Sector) with the resulting inflation state,
 regime and allocation, and the row you're currently in highlighted. It is

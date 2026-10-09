@@ -33,6 +33,9 @@ from build_signals_extended import (  # noqa: E402
     load_growth, load_inflation_spliced, load_sector_basket_spliced, rolling_slope,
 )
 from refresh_chart import TRADED_REGIME_MAP  # noqa: E402
+# The same 2-day confirmation rule the dashboard's "Hybrid, Daily, 2-day
+# confirm" series is backtested with -- reused, not reimplemented.
+from simulate_hybrid_qld_goldilocks_xle_reflation_daily_signal_confirm2 import CONFIRM_DAYS, confirmed  # noqa: E402
 
 DB_PATH = PROJECT_ROOT / "data" / "curated.duckdb"
 
@@ -102,11 +105,6 @@ def build_preview() -> dict:
     if len(df) < 2:
         raise RuntimeError("Not enough signal history to build a preview -- run the pipeline first")
 
-    def row_decision(row) -> dict:
-        d = decide(row["growth_up"], row["breakeven_above_target"], row["breakeven_momentum_up"], row["asset_momentum_up"])
-        d["date"] = str(row["trading_date"])[:10]
-        return d
-
     if not session_over:
         # Mid-session, yfinance can already return today's row with the
         # delayed intraday price in the Close column -- that is not a final
@@ -122,8 +120,6 @@ def build_preview() -> dict:
     if has_today:
         # The EOD pipeline already ingested a finalized close for today --
         # no live splice needed, the "preview" is today's real, final decision.
-        current = row_decision(df.iloc[-2])
-        preview = row_decision(last)
         live_prices = None
         spx, sma = float(last["spy_close"]), float(last["spy_sma_200"])
     else:
@@ -139,9 +135,6 @@ def build_preview() -> dict:
         ratios.append(ratios[-1] * (1.0 + pos_r) / (1.0 + neg_r))
         slope = rolling_slope(pd.Series(ratios[-MOMENTUM_WINDOW_DAYS:]), MOMENTUM_WINDOW_DAYS).iloc[-1]
 
-        current = row_decision(last)
-        preview = decide(spx > sma, bool(last["breakeven_above_target"]), bool(last["breakeven_momentum_up"]), slope > 0)
-        preview["date"] = str(today)[:10]
         live_row = {
             "trading_date": today, "spy_close": spx, "spy_sma_200": float(sma), "growth_up": bool(spx > sma),
             "inflation_level": float(last["inflation_level"]),
@@ -152,15 +145,37 @@ def build_preview() -> dict:
             "asset_momentum_up": bool(slope > 0),
         }
 
-    # Last HISTORY_DAYS sessions of every input signal (today's live-quote row
-    # included when the session is still open), each tagged with the holding
-    # that day's signals decided -- feeds the email's signal charts.
-    history = pd.concat([df, pd.DataFrame([live_row])], ignore_index=True) if live_row else df
-    history = history.tail(HISTORY_DAYS).reset_index(drop=True)
-    history["holding"] = [
-        decide(r.growth_up, r.breakeven_above_target, r.breakeven_momentum_up, r.asset_momentum_up)["holding"]
-        for r in history.itertuples()
+    # Every session's raw regime (today's live-quote row included when the
+    # session is still open), then the 2-day confirmation rule over the whole
+    # chain -- it is path-dependent, so it has to start from the beginning,
+    # exactly as the backtest does.
+    full = pd.concat([df, pd.DataFrame([live_row])], ignore_index=True) if live_row else df
+    raw_decisions = [
+        decide(r.growth_up, r.breakeven_above_target, r.breakeven_momentum_up, r.asset_momentum_up)
+        for r in full.itertuples()
     ]
+    raw_holdings = [d["holding"] for d in raw_decisions]
+    confirmed_holdings = confirmed(raw_holdings, CONFIRM_DAYS)
+
+    def decision_at(i: int) -> dict:
+        d = dict(raw_decisions[i])  # growthUp / inflationOn are today's RAW signals
+        d["holding"] = confirmed_holdings[i]
+        d["regime"] = TRADED_REGIME_MAP[d["holding"]]
+        d["rawHolding"] = raw_holdings[i]
+        d["rawRegime"] = TRADED_REGIME_MAP[raw_holdings[i]]
+        d["pending"] = raw_holdings[i] != confirmed_holdings[i]
+        d["date"] = str(today)[:10] if (live_row and i == len(full) - 1) else str(full["trading_date"].iloc[i])[:10]
+        return d
+
+    preview = decision_at(len(full) - 1)
+    # Held today = decided at the previous session's close.
+    current = decision_at(len(full) - 2)
+
+    # Last HISTORY_DAYS sessions of every input signal, each tagged with the
+    # (confirmed) holding in force that day -- feeds the email's signal charts.
+    history = full.tail(HISTORY_DAYS).reset_index(drop=True)
+    history["rawHolding"] = raw_holdings[-HISTORY_DAYS:]
+    history["holding"] = confirmed_holdings[-HISTORY_DAYS:]
 
     preview["inputs"] = {
         "spx": spx,

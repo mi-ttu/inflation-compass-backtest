@@ -21,6 +21,8 @@ def snapshot(preview: dict, label: str) -> dict:
         "decisionDate": rec["date"],
         "holding": rec["holding"],
         "regime": rec["regime"],
+        "rawHolding": rec["rawHolding"],
+        "pending": bool(rec["pending"]),
         "growthUp": bool(rec["growthUp"]),
         "inflationOn": bool(rec["inflationOn"]),
         "inputs": rec["inputs"],
