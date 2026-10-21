@@ -43,6 +43,7 @@ SECTORS = list(POSITIVE_BASKET) + list(NEGATIVE_BASKET)
 LIVE_TICKERS = ["^GSPC", *SECTORS]
 SUBSTITUTION = {"XLK": "QLD"}
 HISTORY_DAYS = 63
+STALE_SESSIONS = 2
 
 
 def live_quote(ticker: str) -> float:
@@ -177,12 +178,18 @@ def build_preview() -> dict:
     history["rawHolding"] = raw_holdings[-HISTORY_DAYS:]
     history["holding"] = confirmed_holdings[-HISTORY_DAYS:]
 
+    lag_sessions = int((pd.to_datetime(full["trading_date"]) > pd.Timestamp(inflation_as_of)).sum())
     preview["inputs"] = {
         "spx": spx,
         "sma200": float(sma),
         "breakeven": float(last["inflation_level"]),
         "breakevenTarget": BREAKEVEN_TARGET,
         "inflationAsOf": str(inflation_as_of)[:10],
+        # Trading sessions since FRED last published the breakeven. FRED
+        # normally runs one session behind, so 2+ means it is down or delayed
+        # and the inflation signals are using an older reading.
+        "inflationLagSessions": lag_sessions,
+        "inflationStale": lag_sessions >= STALE_SESSIONS,
     }
     return {"current": current, "preview": preview, "isLive": live_prices is not None, "livePrices": live_prices,
             "history": history}

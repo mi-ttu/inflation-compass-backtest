@@ -153,6 +153,14 @@ view and labels it "2-day confirmed" (the Enhanced view has no confirmed variant
 banner is labelled "unconfirmed"); the plain "Hybrid, Daily" chart series stays the
 unconfirmed daily signal, alongside its "2-day confirm" counterpart.
 
+If FRED (the 5-year breakeven source) is down or delayed, both emails show a red **stale data
+warning** at the top: the breakeven's last publication date, how many trading sessions ago that
+was, and which signals are affected (Inflation level and momentum; Growth and Sector use live
+market data). It triggers when the latest reading is 2 or more sessions old (FRED normally runs
+one session behind). FRED outages no longer break the daily run: `ingest/fetch_fred.py` rejects
+a response that isn't the series' CSV (FRED serves an HTML maintenance page with HTTP 200) and
+keeps the previous good pull.
+
 Both emails also carry a **decision matrix** - every combination of the four
 signals (Growth, Level, Momentum, Sector) with the resulting inflation state,
 regime and allocation, and the row you're currently in highlighted. It is

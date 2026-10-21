@@ -126,6 +126,33 @@ def _pending_text(rec: dict) -> str:
             f"{rec['rawHolding']} again, the allocation changes to {rec['rawHolding']}.")
 
 
+def _stale_text(rec: dict) -> str:
+    """Explicit warning when FRED (the 5-year breakeven source) hasn't published
+    recently, so the inflation signals are running on an older reading."""
+    i = rec.get("inputs", {})
+    if not i.get("inflationStale"):
+        return ""
+    return (f"STALE DATA WARNING: the 5-year breakeven (FRED T5YIE) was last published on {i['inflationAsOf']}, "
+            f"{i['inflationLagSessions']} trading sessions ago. FRED may be down or delayed, so the Inflation level and "
+            f"Inflation momentum signals are using that older reading. Growth and Sector momentum use live market data "
+            f"and are not affected.")
+
+
+def _stale_block(rec: dict) -> str:
+    t = _stale_text(rec)
+    return t + "\n\n" if t else ""
+
+
+def _stale_html(rec: dict) -> str:
+    t = _stale_text(rec)
+    if not t:
+        return ""
+    head, rest = t.split(": ", 1)
+    return (f'<div style="margin:14px 24px 0;padding:10px 14px;background:#fdecea;border:1px solid #f1a9a0;'
+            f'border-radius:8px;font-size:12.5px;line-height:1.5;color:#8a1f11;font-family:{FONT_STACK};">'
+            f'<b>{head.title()}:</b> {rest}</div>')
+
+
 RULE_NOTE = ("2-day confirmation rule: the allocation changes only after the same new regime shows on two "
              "consecutive closes, which filters out 1-2 day flips around a threshold.")
 
@@ -325,6 +352,7 @@ def format_daily_status_text(preview: dict, charts: list[dict] | None = None) ->
         if changes else ""
     ) + (_pending_text(rec) + "\n\n" if rec.get("pending") else "")
     body = (
+        f"{_stale_block(rec)}"
         f"Hybrid (QLD/XLE), Daily variant with 2-day regime confirmation.\n\n"
         f"Current allocation (held today, decided at the close of {current['date']}): {_describe(current)}\n\n"
         f"{rec_line}\n\n"
@@ -397,7 +425,7 @@ def format_daily_status_html(preview: dict, charts: list[dict] | None = None) ->
   <div style="padding:22px 24px 16px;border-bottom:2px solid #eef0f6;">
     <div style="font-size:19px;font-weight:700;">Inflation Compass Daily Status</div>
     <div style="font-size:12.5px;color:#5b6272;margin-top:3px;">Hybrid (QLD/XLE), Daily with 2-day confirmation &middot; latest session: <b>{rec['date']}</b></div>
-  </div>{change_banner}
+  </div>{_stale_html(rec)}{change_banner}
   <div style="padding:20px 24px 4px;">
     {current_card}
     {rec_card}
@@ -459,7 +487,7 @@ def format_change_alert(preview: dict, baseline: dict | None, data_final: bool,
     warn = "" if data_final else (
         "Warning: Yahoo's daily bars for today had not stabilized when this ran, so these closing prices may still move.")
 
-    text = [headline, ""]
+    text = [headline, ""] + ([_stale_text(final), ""] if _stale_text(final) else [])
     if old:
         text.append(f"2:30 PM preview: {_describe(baseline)}")
     text.append(f"Final close ({final['date']}): {_describe(final)}")
@@ -498,7 +526,7 @@ def format_change_alert(preview: dict, baseline: dict | None, data_final: bool,
   <div style="padding:22px 24px 16px;border-bottom:2px solid #eef0f6;">
     <div style="font-size:19px;font-weight:700;">Inflation Compass &mdash; {title}</div>
     <div style="font-size:12.5px;color:#5b6272;margin-top:3px;">{headline}</div>
-  </div>
+  </div>{_stale_html(final)}
   <div style="padding:20px 24px 4px;">
     {cards}
     <div style="font-size:12.5px;color:#171a24;line-height:1.55;font-family:{FONT_STACK};">{detail}{warn_html}</div>
