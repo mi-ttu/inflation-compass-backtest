@@ -157,9 +157,13 @@ If FRED (the 5-year breakeven source) is down or delayed, both emails show a red
 warning** at the top: the breakeven's last publication date, how many trading sessions ago that
 was, and which signals are affected (Inflation level and momentum; Growth and Sector use live
 market data). It triggers when the latest reading is 2 or more sessions old (FRED normally runs
-one session behind). FRED outages no longer break the daily run: `ingest/fetch_fred.py` rejects
-a response that isn't the series' CSV (FRED serves an HTML maintenance page with HTTP 200) and
-keeps the previous good pull.
+one session behind). The 5-year breakeven comes from the **U.S. Treasury first** (the 5-year nominal par yield minus the
+5-year real/TIPS par yield, which is exactly how FRED builds `T5YIE`; the two agree to the cent), with
+FRED as the fallback and the previous good pull behind that. Treasury is the origin of the data and
+FRED a repackaging of it. `ingest/fetch_fred.py` refuses Treasury data that disagrees with the
+previous pull (so a silent format change can't corrupt the signal), and a response that isn't a real
+CSV is never saved (FRED serves an HTML maintenance page with HTTP 200), so an outage at either
+source no longer breaks the daily run. The stored series records its provider (`TREASURY` / `FRED`).
 
 Both emails also carry a **decision matrix** - every combination of the four
 signals (Growth, Level, Momentum, Sector) with the resulting inflation state,

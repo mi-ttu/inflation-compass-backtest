@@ -45,7 +45,7 @@ def load_fred(con: duckdb.DuckDBPyConnection) -> None:
         df["series_id"] = series_id
         df["release_date"] = pulled_at.date()
         df["is_forward_filled"] = False
-        df["source"] = "FRED"
+        df["source"] = meta["source"].upper()  # "FRED" or "TREASURY"
 
         con.execute("DELETE FROM fred_series WHERE series_id = ?", [series_id])
         con.execute(
