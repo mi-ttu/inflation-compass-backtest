@@ -61,16 +61,16 @@ def _specs(hist: pd.DataFrame, inflation_as_of: str) -> list[dict]:
     rel = lambda a, b: ">" if a > b else "<"  # noqa: E731
     return [
         dict(key="growth", title=f"Growth: S&P 500 above its {bse.SMA_WINDOW}-day average", state=bool(last["growth_up"]),
-             y=hist["spy_close"].to_numpy(float), ref=hist["spy_sma_200"].to_numpy(float), fmt=lambda v: f"{v:,.0f}",
+             y=hist["spy_close"].to_numpy(float), ref=hist["spy_sma_200"].to_numpy(float), kind="int", fmt=lambda v: f"{v:,.0f}",
              text=f"S&P 500 {spx:,.2f} {rel(spx, sma)} {bse.SMA_WINDOW}-day average {sma:,.2f} ({spx / sma - 1:+.1%})"),
         dict(key="level", title=f"Inflation level: 5-year breakeven above {target:.1f}%", state=bool(last["breakeven_above_target"]),
-             y=hist["inflation_level"].to_numpy(float), ref=np.full(len(hist), target), fmt=lambda v: f"{v:.2f}%",
-             text=f"5y breakeven {be:.2f}% {rel(be, target)} {target:.2f}% target (latest FRED value, {inflation_as_of})"),
+             y=hist["inflation_level"].to_numpy(float), ref=np.full(len(hist), target), kind="pct2", fmt=lambda v: f"{v:.2f}%",
+             text=f"5y breakeven {be:.2f}% {rel(be, target)} {target:.2f}% target (latest published value, {inflation_as_of})"),
         dict(key="momentum", title=f"Inflation momentum: breakeven above its level {WINDOW} days ago", state=bool(last["breakeven_momentum_up"]),
-             y=hist["inflation_level"].to_numpy(float), ref=hist["breakeven_lagged"].to_numpy(float), fmt=lambda v: f"{v:.2f}%",
+             y=hist["inflation_level"].to_numpy(float), ref=hist["breakeven_lagged"].to_numpy(float), kind="pct2", fmt=lambda v: f"{v:.2f}%",
              text=f"5y breakeven {be:.2f}% vs {lag:.2f}% {WINDOW} trading days earlier ({be - lag:+.2f} pts)"),
         dict(key="sector", title=f"Sector momentum: cyclicals vs defensives, {WINDOW}-day trend up", state=bool(last["asset_momentum_up"]),
-             y=ratio, ref=trend, fmt=lambda v: f"{v:.1f}",
+             y=ratio, ref=trend, kind="one", fmt=lambda v: f"{v:.1f}",
              text=f"Cyclicals/defensives ratio (rebased to 100): {WINDOW}-day trend {slope_pct:+.3f}% per day"),
     ]
 
@@ -117,3 +117,23 @@ def render_signal_charts(history: pd.DataFrame, holding_colors: dict, inflation_
     hist = history.reset_index(drop=True)
     return [{"key": s["key"], "title": s["title"], "state": s["state"], "text": s["text"],
              "png": _chart_png(s, hist, holding_colors)} for s in _specs(hist, inflation_as_of)]
+
+
+def _clean(values) -> list:
+    """JSON-safe list: NaN -> None, rounded."""
+    return [None if not np.isfinite(v) else round(float(v), 4) for v in values]
+
+
+def chart_payload(history: pd.DataFrame, inflation_as_of: str) -> dict:
+    """The same four charts as the email, as plain data for the dashboard to
+    draw itself (native SVG, so it follows the page's light/dark theme)."""
+    hist = history.reset_index(drop=True)
+    return {
+        "dates": [str(d)[:10] for d in hist["trading_date"]],
+        "holdings": hist["holding"].tolist(),
+        "charts": [
+            {"key": s["key"], "title": s["title"], "state": s["state"], "text": s["text"], "kind": s["kind"],
+             "y": _clean(s["y"]), "ref": _clean(s["ref"])}
+            for s in _specs(hist, inflation_as_of)
+        ],
+    }

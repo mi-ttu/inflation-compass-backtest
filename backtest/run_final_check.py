@@ -84,6 +84,7 @@ def main() -> None:
     data_final = wait_for_final_close(today)
     refresh_chart.main()
     preview = live_preview.build_preview()
+    refresh_chart.patch_signal_status(preview)  # dashboard's Signal status panel; never raises
     if preview["isLive"]:
         data_final = False  # today's bar still missing after the refresh: the preview fell back to live quotes
     baseline = status_store.load_baseline(today)

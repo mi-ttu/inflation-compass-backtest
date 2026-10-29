@@ -443,6 +443,50 @@ def patch_chart(
     CHART_PATH.write_text(text, encoding="utf-8")
 
 
+def build_signal_status(preview: dict) -> dict:
+    """What the emails show about today's signals (the four charts, the decision
+    matrix and the pending/stale notices) as data for the dashboard's Signal
+    status panel. `preview` is live_preview.build_preview()'s return value."""
+    import notify  # lazy: these import live_preview/matplotlib, which import this module
+    import signal_charts
+
+    rec, cur, history = preview["preview"], preview["current"], preview["history"]
+    states = notify._current_states(history)
+    rows = notify._matrix_rows()
+    payload = signal_charts.chart_payload(history, rec["inputs"]["inflationAsOf"])
+    payload.update({
+        "date": rec["date"],
+        "isLive": bool(preview["isLive"]),
+        "current": {"holding": cur["holding"], "regime": cur["regime"], "date": cur["date"]},
+        "recommended": {"holding": rec["holding"], "regime": rec["regime"], "rawHolding": rec["rawHolding"],
+                        "pending": bool(rec["pending"])},
+        "pendingText": notify._pending_text(rec),
+        "staleText": notify._stale_text(rec),
+        "ruleNote": notify.RULE_NOTE,
+        "matrix": {
+            "rows": [{"pattern": list(r["pattern"]), "inflationOn": bool(r["inflationOn"]),
+                      "holding": r["holding"], "regime": r["regime"]} for r in rows],
+            "now": next((i for i, r in enumerate(rows) if notify._row_matches(r["pattern"], states)), -1),
+        },
+    })
+    return payload
+
+
+def patch_signal_status(preview: dict) -> None:
+    """Patch the Signal status panel's data into the dashboard. Called by
+    run_daily.py / run_final_check.py right after they build the preview (it
+    needs the live-quote preview, which main() below doesn't build). A failure
+    here must never stop the refresh or the email, so it only warns."""
+    try:
+        payload = build_signal_status(preview)
+        text = CHART_PATH.read_text(encoding="utf-8")
+        CHART_PATH.write_text(replace_const(text, "SIGNAL_STATUS", payload), encoding="utf-8")
+    except Exception as exc:
+        print(f"[refresh] signal status panel skipped: {exc}")
+        return
+    print(f"[refresh] signal status ({payload['date']}, live={payload['isLive']}) patched into the dashboard")
+
+
 def main() -> None:
     run_pipeline()
 

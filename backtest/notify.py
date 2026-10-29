@@ -132,8 +132,8 @@ def _stale_text(rec: dict) -> str:
     i = rec.get("inputs", {})
     if not i.get("inflationStale"):
         return ""
-    return (f"STALE DATA WARNING: the 5-year breakeven (FRED T5YIE) was last published on {i['inflationAsOf']}, "
-            f"{i['inflationLagSessions']} trading sessions ago. FRED may be down or delayed, so the Inflation level and "
+    return (f"STALE DATA WARNING: the 5-year breakeven (T5YIE, from the U.S. Treasury with FRED as backup) was last published on {i['inflationAsOf']}, "
+            f"{i['inflationLagSessions']} trading sessions ago. Treasury and FRED may both be down or delayed, so the Inflation level and "
             f"Inflation momentum signals are using that older reading. Growth and Sector momentum use live market data "
             f"and are not affected.")
 

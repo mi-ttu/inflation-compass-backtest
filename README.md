@@ -165,6 +165,12 @@ previous pull (so a silent format change can't corrupt the signal), and a respon
 CSV is never saved (FRED serves an HTML maintenance page with HTTP 200), so an outage at either
 source no longer breaks the daily run. The stored series records its provider (`TREASURY` / `FRED`).
 
+The dashboard's **Signal status** panel (Original view, under the allocation banner) shows the same
+four signal charts, the decision matrix with today's row highlighted, and the pending / stale notices,
+drawn as native SVG so they follow the light/dark theme. Its data (`SIGNAL_STATUS`) is patched in by
+`run_daily.py` and `run_final_check.py` right after they build the preview (`refresh_chart.patch_signal_status`),
+so a manual `refresh_chart.py` run alone leaves it as it was.
+
 Both emails also carry a **decision matrix** - every combination of the four
 signals (Growth, Level, Momentum, Sector) with the resulting inflation state,
 regime and allocation, and the row you're currently in highlighted. It is

@@ -62,6 +62,7 @@ def main() -> None:
     except Exception as exc:
         print(f"[run_daily] could not build the live preview, skipping the status email: {exc}")
         return
+    refresh_chart.patch_signal_status(preview)  # dashboard's Signal status panel; never raises
     # Saved before (and regardless of) the email, so the 3:15 PM final-close
     # check always has a baseline to compare against.
     try:
