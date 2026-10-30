@@ -33,6 +33,7 @@ from build_signals_extended import (  # noqa: E402
     load_growth, load_inflation_spliced, load_sector_basket_spliced, rolling_slope,
 )
 from refresh_chart import TRADED_REGIME_MAP  # noqa: E402
+from close_data import FINAL_AFTER, TICKERS as CLOSE_TICKERS  # noqa: E402
 # The same 2-day confirmation rule the dashboard's "Hybrid, Daily, 2-day
 # confirm" series is backtested with -- reused, not reimplemented.
 from simulate_hybrid_qld_goldilocks_xle_reflation_daily_signal_confirm2 import CONFIRM_DAYS, confirmed  # noqa: E402
@@ -41,6 +42,7 @@ DB_PATH = PROJECT_ROOT / "data" / "curated.duckdb"
 
 SECTORS = list(POSITIVE_BASKET) + list(NEGATIVE_BASKET)
 LIVE_TICKERS = ["^GSPC", *SECTORS]
+assert set(LIVE_TICKERS) == set(CLOSE_TICKERS), "close_data.TICKERS must match the signal's inputs"
 SUBSTITUTION = {"XLK": "QLD"}
 HISTORY_DAYS = 63
 STALE_SESSIONS = 2
@@ -73,7 +75,9 @@ def decide(growth_up: bool, breakeven_above: bool, breakeven_mom_up: bool, asset
 def build_preview() -> dict:
     now_et = pd.Timestamp.now(tz="America/New_York")
     today = pd.Timestamp(now_et.date())
-    session_over = now_et.hour * 60 + now_et.minute >= 16 * 60 + 15
+    # From FINAL_AFTER (4:05 PM ET) Yahoo's row for today is treated as the final
+    # close -- the after-close daily run waits for it to settle first (close_data.py).
+    session_over = now_et.time() >= FINAL_AFTER
 
     con = duckdb.connect(str(DB_PATH), read_only=True)
     growth = load_growth(con)

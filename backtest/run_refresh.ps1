@@ -3,9 +3,10 @@
 # venv and logs full output to a timestamped file, since the task runs
 # unattended and errors would otherwise go unnoticed.
 #
-# -TaskScript / -LogPrefix let the same launcher run the 3:15 PM final-close
-# check (run_final_check.py, logs final_*.log) alongside the 2:30 PM refresh
-# (run_daily.py, logs refresh_*.log).
+# The daily run (run_daily.py, logs refresh_*.log) is scheduled Mon-Fri at
+# 3:05 PM Central, after the close. -TaskScript / -LogPrefix let the same
+# launcher run the optional final-close check (run_final_check.py, logs
+# final_*.log), which is no longer scheduled since 2026-10-29.
 #
 # Not meant to be run directly by a person day-to-day; run
 # backtest/run_daily.py yourself for that. This wrapper exists so the

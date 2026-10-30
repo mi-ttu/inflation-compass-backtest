@@ -9,11 +9,15 @@
 #   3. Installs the app's dependencies into that runtime.
 #   4. Runs the app once immediately (first-time database bootstrap --
 #      pulls ~36 years of public market data, takes a few minutes).
-#   5. Registers a Windows Scheduled Task, Mon-Fri at 2:30 PM (current-
+#   5. Registers a Windows Scheduled Task, Mon-Fri at 3:05 PM (current-
 #      user scope, no stored credentials) so the dashboard stays current
-#      going forward. The task fires every weekday; run_daily.py itself
-#      checks the NYSE trading calendar and no-ops on holidays, since a
-#      Task Scheduler weekly trigger alone can't skip those.
+#      going forward. The run happens 5 minutes after the close, so the
+#      daily email reports the definitive allocation from final closing
+#      prices (run_daily.py waits for Yahoo's closing bars to settle). The
+#      task fires every weekday; run_daily.py itself checks the NYSE trading
+#      calendar and no-ops on holidays, since a Task Scheduler weekly trigger
+#      alone can't skip those. A final-close check task left over from older
+#      versions (InflationCompassFinalCheck) is disabled, not deleted.
 #   6. Drops a desktop shortcut to the dashboard.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File install.ps1
@@ -34,14 +38,13 @@ $PythonVersion = "3.13.5"
 $PythonEmbedUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip"
 $GetPipUrl = "https://bootstrap.pypa.io/get-pip.py"
 $TaskName = "InflationCompassDailyRefresh"
-# 2:30 PM local system time -- 30 min before the NYSE close, matching the
-# MaxAlpha backtest project's schedule. On this machine's Central Time
-# config that's 2:30 PM CST/CDT.
-$DailyTime = "2:30PM"
-# 3:15 PM local = 4:15 PM Eastern, 15 min after the close, when the day's
-# closing prices are published.
-$FinalTaskName = "InflationCompassFinalCheck"
-$FinalTime = "3:15PM"
+# 3:05 PM local system time -- on this machine's Central Time config that's
+# 4:05 PM Eastern, 5 minutes after the NYSE close (run_daily.py then waits for
+# Yahoo's closing bars to settle), matching the MaxAlpha backtest project.
+# Register-ScheduledTask triggers follow local time incl. DST. If the target
+# machine is NOT set to US Central, adjust this.
+$DailyTime = "3:05PM"
+$LegacyFinalTaskName = "InflationCompassFinalCheck"
 
 $SourceApp = Join-Path $PSScriptRoot "app"
 if (-not (Test-Path $SourceApp)) {
@@ -110,31 +113,22 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Registering refresh task (Mon-Fri, $DailyTime) ..."
 $action = New-ScheduledTaskAction -Execute $PythonExe -Argument "`"$(Join-Path $DestApp 'backtest\run_daily.py')`"" -WorkingDirectory $DestApp
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $DailyTime
+# 40 minutes: it can wait up to 15 for Yahoo's closing bars before the refresh.
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 40) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($existing) {
     Set-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings | Out-Null
 } else {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
-        -RunLevel Limited -Description "Inflation Compass backtest: refresh + daily status email, trading days at 2:30 PM" | Out-Null
+        -RunLevel Limited -Description "Inflation Compass backtest: after-close refresh + daily status email (final closing prices), trading days at 3:05 PM Central" | Out-Null
 }
 
-# 3:15 PM final-close check (4:15 PM Eastern, 15 min after the close): reruns
-# the signal on the day's real closing prices and emails ONLY if the
-# recommended allocation differs from the 2:30 PM run's.
-Write-Host "Registering final-close check task (Mon-Fri, $FinalTime) ..."
-$finalAction = New-ScheduledTaskAction -Execute $PythonExe -Argument "`"$(Join-Path $DestApp 'backtest\run_final_check.py')`"" -WorkingDirectory $DestApp
-$finalTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $FinalTime
-# 40 minutes: it can wait up to 15 for Yahoo's closing bars before the refresh.
-$finalSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 40) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-if (Get-ScheduledTask -TaskName $FinalTaskName -ErrorAction SilentlyContinue) {
-    Set-ScheduledTask -TaskName $FinalTaskName -Action $finalAction -Trigger $finalTrigger -Settings $finalSettings | Out-Null
-} else {
-    Register-ScheduledTask -TaskName $FinalTaskName -Action $finalAction -Trigger $finalTrigger -Settings $finalSettings `
-        -RunLevel Limited -Description "Inflation Compass backtest: 3:15 PM final-close check, emails only if the allocation changed since the 2:30 PM run" | Out-Null
+# Since 2026-10-29 the daily run itself happens after the close, so the separate
+# 3:15 PM final-close check is redundant; disable it if an older install left one.
+if (Get-ScheduledTask -TaskName $LegacyFinalTaskName -ErrorAction SilentlyContinue) {
+    Disable-ScheduledTask -TaskName $LegacyFinalTaskName | Out-Null
 }
 
 # ---- 6. Desktop shortcut ----
@@ -151,4 +145,3 @@ Write-Host "Done." -ForegroundColor Green
 Write-Host "Dashboard: $chartPath"
 Write-Host "Desktop shortcut created."
 Write-Host "Refresh scheduled Mon-Fri at $DailyTime, local time (task: $TaskName)."
-Write-Host "Final-close check scheduled Mon-Fri at $FinalTime (task: $FinalTaskName)."

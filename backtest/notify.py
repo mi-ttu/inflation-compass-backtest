@@ -351,6 +351,9 @@ def format_daily_status_text(preview: dict, charts: list[dict] | None = None) ->
         f"The new regime has now shown on two consecutive closes.\n\n"
         if changes else ""
     ) + (_pending_text(rec) + "\n\n" if rec.get("pending") else "")
+    if preview.get("dataFinal") is False:
+        change_line += ("Warning: Yahoo's closing prices had not settled when this ran, so today's signal may "
+                        "still change.\n\n")
     body = (
         f"{_stale_block(rec)}"
         f"Hybrid (QLD/XLE), Daily variant with 2-day regime confirmation.\n\n"
@@ -400,6 +403,11 @@ def format_daily_status_html(preview: dict, charts: list[dict] | None = None) ->
         rec_extra = ""
         rec_label = "Recommended at Today&rsquo;s Close &mdash; Final &middot; 2-day rule"
         rec_sub = f"{REGIME_LABELS.get(rec['regime'], rec['regime'])} &mdash; decided at the close of {rec['date']}"
+    if preview.get("dataFinal") is False:
+        rec_extra += f"""
+  <div style="{box}">
+    <b>Closing prices had not settled</b> when this ran &mdash; the signal may still change.
+  </div>"""
     if rec.get("pending"):
         rec_extra += f"""
   <div style="{box}">

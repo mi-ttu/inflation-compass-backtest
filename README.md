@@ -82,8 +82,8 @@ Claude Code session (the Artifact tool isn't callable from a bare script).
 ## Keeping it current automatically
 
 A Windows Scheduled Task named `InflationCompassChartRefresh` runs
-**Mon-Fri at 2:30 PM Central** (30 min before the NYSE close, matching the
-MaxAlpha backtest project's schedule), via `backtest/run_refresh.ps1` (a
+**Mon-Fri at 3:05 PM Central** (4:05 PM Eastern, 5 minutes after the NYSE
+close, matching the MaxAlpha backtest project's schedule), via `backtest/run_refresh.ps1` (a
 thin wrapper around `run_daily.py` that logs full output, UTF-8, to
 `backtest/refresh_logs/`, keeping the 20 most recent runs). It's configured
 to catch up automatically if the machine was off or asleep at the scheduled
@@ -95,11 +95,17 @@ The task fires every weekday, but `run_daily.py` checks the NYSE
 Christmas, ...) that a plain Mon-Fri trigger can't skip on its own — see
 `is_trading_day()` in that file.
 
-Because the run happens before the close, "latest data" means the most
-recently *finalized* session's close — yfinance returns a partial,
-still-in-progress bar for the current session until it actually settles,
-and `load_bronze_to_silver.py` filters that incomplete row out rather than
-let it violate the database's NOT NULL constraint.
+The run happens after the close so the day's data and the email are on **final
+closing prices**. Yahoo's daily bars can still move for a few minutes after 4 PM,
+so `run_daily.py` first waits for them to settle (`backtest/close_data.py`):
+nothing counts as final before 4:05 PM Eastern, and ^GSPC plus the seven sector
+ETFs must read the same on two polls a minute apart, for up to 15 minutes. If
+they never settle it carries on with what it has and the email says the closing
+prices may still move. (Until 2026-10-29 the run was at 2:30 PM on a live
+intraday preview, with a separate 3:15 PM final-close check; see below.) Run by
+hand during the session, it still works and reports a live preview; a partial,
+still-in-progress bar for the current session is filtered out by
+`load_bronze_to_silver.py` rather than violating the NOT NULL constraint.
 
 (The standalone-install path below sets up an equivalent task
 automatically — see that section instead if you used `install.ps1`.)
@@ -112,12 +118,12 @@ another machine:
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
   -Argument '-NoProfile -ExecutionPolicy Bypass -File "<repo path>\backtest\run_refresh.ps1"' `
   -WorkingDirectory "<repo path>"
-$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 2:30PM
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 3:05PM
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
-  -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+  -ExecutionTimeLimit (New-TimeSpan -Minutes 40) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName "InflationCompassChartRefresh" -Action $action `
   -Trigger $trigger -Settings $settings -RunLevel Limited `
-  -Description "Inflation Compass backtest: refresh + daily status email, trading days at 2:30 PM"
+  -Description "Inflation Compass backtest: after-close refresh + daily status email, trading days at 3:05 PM Central"
 ```
 
 Note that this only regenerates the local HTML file — pushing the refreshed
@@ -131,12 +137,12 @@ since the Artifact tool isn't callable from a bare script.
 runs** — via `backtest/notify.py`, laid out like the MaxAlpha backtest
 project's status email — with two cards for the Hybrid (QLD/XLE), Daily
 variant: **Currently Held** (decided at the prior close) and **Recommended
-at Today's Close**. The recommendation is a live preview
-(`backtest/live_preview.py`): the regime signal recomputed with delayed
-intraday quotes for ^GSPC and the seven sector ETFs spliced in as today's
-row (T5YIE isn't live — FRED lags — so its latest published value is
-carried forward). It's flagged "not final" while the session is open, and
-the email calls out a **CHANGE** when the two cards differ. Sent as rich
+at Today's Close**. At the scheduled 3:05 PM run the recommendation is final:
+it is decided on today's closing prices (`backtest/live_preview.py`). If the
+script is run during the session it becomes a live preview instead (delayed
+intraday quotes for ^GSPC and the seven sector ETFs spliced in as today's row)
+and is flagged "not final". The email calls out a **CHANGE** when the two cards
+differ. Sent as rich
 HTML with a plain-text fallback.
 
 The allocation both emails recommend uses the **2-day regime confirmation rule**
@@ -176,7 +182,7 @@ signals (Growth, Level, Momentum, Sector) with the resulting inflation state,
 regime and allocation, and the row you're currently in highlighted. It is
 generated from the same `decide()` the signal uses, so it can't drift from it.
 
-Both emails (the 2:30 PM status and the 3:15 PM alert) also embed four
+Both emails (the daily status and the optional final-close alert) also embed four
 **signal charts** as inline images, in the style of the MaxAlpha project's
 emails: the last ~3 months of each input against its threshold, with the
 background shaded by the holding decided that day, and a True/False badge -
@@ -198,33 +204,20 @@ enable it:
    and fill in your Gmail address, the app password, and where you want
    the alert sent. This file is git-ignored — it never gets committed.
 
-## 3:15 PM final-close check
+## Optional final-close check (not scheduled)
 
-The 2:30 PM run decides on delayed intraday quotes that can still move before
-the close. A second scheduled task, `InflationCompassFinalCheck` (Mon-Fri
-3:15 PM Central = 4:15 PM Eastern, 15 minutes after the close), reruns the
-signal on the day's real closing prices (`backtest/run_final_check.py`) and
-**emails only if the recommended allocation differs from the one the 2:30 PM
-run saved** (`data/last_status.json`, local state). If it matches, nothing is
-sent and the log says so. The alert shows both allocations, which signals
-flipped (growth / inflation) and how the S&P 500 moved between the two runs.
-If no 2:30 PM baseline exists for the day (that run failed or didn't happen)
-it sends the final allocation anyway, flagged as such.
-
-Yahoo's daily bars can lag the close by a few minutes, so before refreshing it
-polls ^GSPC and the seven sector ETFs once a minute until all are dated today
-and unchanged across two polls, for up to 15 minutes. If they never settle it
-runs on what it has and the email says the closing prices may still move. It
-refuses to run before 4 PM Eastern. Its output goes to
-`backtest/refresh_logs/final_*.log`. The same dashboard refresh runs at 3:15,
-so the dashboard ends the day on final closes.
-
-The 5-year breakeven (T5YIE) is published by FRED with a lag, so the final-close
-check still uses its latest published value, same as the 2:30 PM run.
-
-To recreate the task on another machine, register `run_refresh.ps1` with
-`-TaskScript run_final_check.py -LogPrefix final` on a Mon-Fri 3:15 PM trigger
-(see `installer/install.ps1` for the standalone install's equivalent).
+From 2026-10-08 to 2026-10-29 the daily run was at 2:30 PM on a live intraday
+preview, and a second task, `InflationCompassFinalCheck` (3:15 PM Central), reran
+the signal on the day's closing prices (`backtest/run_final_check.py`) and emailed
+**only if the recommended allocation differed** from the one the earlier run saved
+(`data/last_status.json`, local state). Now that the daily run itself happens after
+the close, that check is redundant: the task is disabled (the installer disables it
+on older installs rather than deleting it), and the script stays in the repo for
+anyone who goes back to an intraday run. It uses the same wait-for-settled-closes
+logic (`backtest/close_data.py`), and its output goes to
+`backtest/refresh_logs/final_*.log`. To re-enable it, register `run_refresh.ps1`
+with `-TaskScript run_final_check.py -LogPrefix final` on a Mon-Fri trigger after
+the close, and move the daily run back before the close.
 
 ## Standalone install (no Python required)
 
@@ -265,7 +258,7 @@ rights needed):
 3. Runs the app once immediately: first-time database bootstrap (pulls
    ~36 years of public data, a few minutes) so there's something to see
    right away.
-4. Registers a **Mon-Fri, 2:30 PM** Windows Scheduled Task (current-user
+4. Registers a **Mon-Fri, 3:05 PM** (after the close) Windows Scheduled Task (current-user
    scope, no stored credentials, `StartWhenAvailable` so it catches up if
    the machine was off) so the dashboard always reflects data through the
    most recent trading day, with no manual steps.

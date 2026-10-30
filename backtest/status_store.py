@@ -1,5 +1,6 @@
-"""The 2:30 PM run's decision, saved so the 3:15 PM final-close check
-(run_final_check.py) can tell whether the final close changed it.
+"""The daily run's decision, saved so the optional final-close check
+(run_final_check.py, not scheduled since the daily run moved after the close
+on 2026-10-29) can tell whether the final close changed it.
 
 One small JSON file, overwritten each trading day. Local state only: it
 lives under data/, which is git-ignored and never shipped in the release.
@@ -39,7 +40,7 @@ def save_baseline(preview: dict, label: str = "2:30 PM") -> None:
 
 
 def load_baseline(today: date) -> dict | None:
-    """Today's saved 2:30 PM decision, or None (no file, unreadable, or a stale day)."""
+    """Today's saved daily-run decision, or None (no file, unreadable, or a stale day)."""
     try:
         data = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
